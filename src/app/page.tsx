@@ -7,7 +7,6 @@ import ControlPanel from "./components/ControlPanel";
 
 export default function Home() {
   const strategy = useMartingale();
-  const [selectedStrategy, setSelectedStrategy] = useState("ETH-5M-FIBO-MARTINGALE-10X");
   const [editingEquity, setEditingEquity] = useState<number | null>(null);
   const [isEditingEquity, setIsEditingEquity] = useState(false);
 
@@ -16,6 +15,11 @@ export default function Home() {
     setEditingEquity(val);
     strategy.setMarginEquity(val);
     strategy.setInitialCapital(val);
+  };
+
+  // Handle strategy selection
+  const handleStrategyChange = (strategyId: string) => {
+    strategy.loadStrategy(strategyId);
   };
 
   const strategies = [
@@ -43,8 +47,8 @@ export default function Home() {
               <span className="text-[11px] font-bold text-slate-950 font-mono">QL</span>
             </div>
             <select
-              value={selectedStrategy}
-              onChange={(e) => setSelectedStrategy(e.target.value)}
+              value={strategy.currentStrategyId}
+              onChange={(e) => handleStrategyChange(e.target.value)}
               className="bg-slate-900/50 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500/50 font-medium cursor-pointer"
             >
               {strategies.map((s) => (

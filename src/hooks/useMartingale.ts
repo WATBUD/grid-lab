@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 // Types
 export interface SlotOrder {
@@ -55,6 +55,16 @@ export function useMartingale() {
   const [basePrice, setBasePrice] = useState(2112.3);
   const [gridDistance, setGridDistance] = useState(15.0);
   const [totalSlots] = useState(5);
+  const [currentStrategyId, setCurrentStrategyId] = useState("ETH-5M-FIBO-MARTINGALE-10X");
+  const [marginEquity, setMarginEquity] = useState(3125.0);
+
+  // Strategy configurations
+  const strategyConfigs = useMemo(() => ({
+    "ETH-5M-FIBO-MARTINGALE-10X": { basePrice: 2112.3, gridDistance: 15.0, initialCapital: 3125.0, asset: "ETH", timeframe: "5M" },
+    "ETH-15M-FIBO-MARTINGALE-10X": { basePrice: 2112.3, gridDistance: 25.0, initialCapital: 3125.0, asset: "ETH", timeframe: "15M" },
+    "BTC-5M-FIBO-MARTINGALE-10X": { basePrice: 42500.0, gridDistance: 300.0, initialCapital: 3125.0, asset: "BTC", timeframe: "5M" },
+    "BTC-15M-FIBO-MARTINGALE-10X": { basePrice: 42500.0, gridDistance: 500.0, initialCapital: 3125.0, asset: "BTC", timeframe: "15M" },
+  }), []);
 
   // --- Dynamic Account States ---
   const [balance, setBalance] = useState(3125.0); // Capital available
@@ -247,10 +257,76 @@ export function useMartingale() {
     const finalBalance = balance + finalPnl;
     setBalance(parseFloat(finalBalance.toFixed(2)));
     setRealizedPnl((prev) => parseFloat((prev + finalPnl).toFixed(2)));
-    
+
     resetStrategy(finalBalance, undefined);
     addLog("system", `Emergency liquidation triggered. Closed position of ${totalEthSize.toFixed(4)} ETH at current price $${currentPrice.toFixed(2)}. Realized PnL: $${finalPnl.toFixed(2)}.`);
   }, [floatingPnl, balance, totalEthSize, currentPrice, resetStrategy, addLog]);
+
+  // --- Load Strategy Configuration ---
+  const loadStrategy = useCallback((strategyId: string) => {
+    const config = strategyConfigs[strategyId as keyof typeof strategyConfigs];
+    if (!config) {
+      addLog("warning", `Strategy ${strategyId} not found.`);
+      return;
+    }
+
+    // Reset all state
+    setStrategyStatus("inactive");
+    setAveragePrice(0.0);
+    setTotalEthSize(0.0);
+    setTotalUsdMargin(0.0);
+    setFloatingPnl(0.0);
+    setRightSidePaused(false);
+    setCurrentStrategyId(strategyId);
+
+    // Load new configuration
+    setBasePrice(config.basePrice);
+    setGridDistance(config.gridDistance);
+    setInitialCapital(config.initialCapital);
+    setBalance(config.initialCapital);
+    setMarginEquity(config.initialCapital);
+    setDirection("short");
+
+    // Reset grid with new configuration
+    resetGridSlots(config.basePrice, config.gridDistance, "short");
+
+    // Regenerate candles with new base price
+    const initialCandles: Candle[] = [];
+    let price = config.basePrice + 20;
+    const timeBase = new Date();
+    timeBase.setMinutes(timeBase.getMinutes() - 30 * 5);
+
+    for (let i = 0; i < 30; i++) {
+      const candleTime = new Date(timeBase.getTime() + i * 5 * 60 * 1000);
+      const timeStr = `${candleTime.getHours().toString().padStart(2, "0")}:${candleTime.getMinutes().toString().padStart(2, "0")}`;
+
+      const change = (Math.random() - 0.48) * (config.asset === "BTC" ? 80.0 : 8.0);
+      const open = price;
+      const close = price + change;
+      const high = Math.max(open, close) + Math.random() * (config.asset === "BTC" ? 30.0 : 3.0);
+      const low = Math.min(open, close) - Math.random() * (config.asset === "BTC" ? 30.0 : 3.0);
+
+      price = close;
+
+      initialCandles.push({
+        time: timeStr,
+        open: parseFloat(open.toFixed(2)),
+        high: parseFloat(high.toFixed(2)),
+        low: parseFloat(low.toFixed(2)),
+        close: parseFloat(close.toFixed(2)),
+        volume: parseFloat((100 + Math.random() * 200).toFixed(2)),
+        bbUpper: 0,
+        bbMiddle: 0,
+        bbLower: 0,
+      });
+    }
+
+    computeBollingerBands(initialCandles);
+    setCandles(initialCandles);
+    setCurrentPrice(initialCandles[initialCandles.length - 1].close);
+
+    addLog("system", `Strategy loaded: ${config.asset} ${config.timeframe} Fibo Martingale 10X. Base price: $${config.basePrice}, Grid distance: ${config.gridDistance}`);
+  }, [strategyConfigs, resetGridSlots, addLog]);
 
   // --- Select Direction (Long/Short) ---
   const selectDirection = useCallback((dir: "long" | "short") => {
@@ -281,8 +357,6 @@ export function useMartingale() {
       setFloatingPnl(0.0);
     }
   }, [currentPrice, averagePrice, totalEthSize, balance]);
-
-  const [marginEquity, setMarginEquity] = useState(3125.0);
 
   // --- Core Trading Signal and Order Matching Loop ---
   const handlePriceTick = useCallback((newPrice: number, latestCandleCompleted: boolean = false) => {
@@ -806,5 +880,7 @@ export function useMartingale() {
     simulatePriceTick,
     pushNewCandle,
     runPresetScenario,
+    loadStrategy,
+    currentStrategyId,
   };
 }
