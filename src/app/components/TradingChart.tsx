@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useMemo, useCallback, memo } from "react";
 import { Candle, SlotOrder } from "@/hooks/useMartingale";
 
 interface TradingChartProps {
@@ -11,10 +11,14 @@ interface TradingChartProps {
   strategyStatus: string;
   simulatePriceTick: (amt: number) => void;
   rightSidePaused: boolean;
+  direction: "long" | "short";
+  basePrice: number;
+  gridDistance: number;
   id?: string;
 }
 
-export default function TradingChart({
+// Memoize the entire component to prevent unnecessary re-renders
+const TradingChart = memo(function TradingChart({
   candles,
   currentPrice,
   averagePrice,
@@ -22,6 +26,9 @@ export default function TradingChart({
   strategyStatus,
   simulatePriceTick,
   rightSidePaused,
+  direction,
+  basePrice,
+  gridDistance,
   id,
 }: TradingChartProps) {
   const chartRef = useRef<SVGSVGElement>(null);
@@ -29,7 +36,7 @@ export default function TradingChart({
 
   // Constants for fixed scaling to make the chart extremely stable
   const minPrice = 2010.0;
-  const maxPrice = 2165.0;
+  const maxPrice = 2210.0;
   
   const width = 800;
   const height = 400;
@@ -41,75 +48,108 @@ export default function TradingChart({
   const drawableWidth = width - paddingLeft - paddingRight;
   const drawableHeight = height - paddingTop - paddingBottom;
 
-  // Scale functions
-  const getY = (price: number) => {
+  // Memoize scale functions to avoid recreation on every render
+  const getY = useCallback((price: number) => {
     if (price < minPrice) price = minPrice;
     if (price > maxPrice) price = maxPrice;
     const ratio = (price - minPrice) / (maxPrice - minPrice);
     return height - paddingBottom - ratio * drawableHeight;
-  };
+  }, [height, paddingBottom, minPrice, maxPrice, drawableHeight]);
 
-  const getPriceFromY = (y: number) => {
+  const getPriceFromY = useCallback((y: number) => {
     const ratio = (height - paddingBottom - y) / drawableHeight;
     const price = minPrice + ratio * (maxPrice - minPrice);
     return Math.max(minPrice, Math.min(maxPrice, price));
-  };
+  }, [height, paddingBottom, drawableHeight, minPrice, maxPrice]);
 
-  // Drag handler for price line
-  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+  // Memoize expensive calculations
+  const stepX = useMemo(() => {
+    return candles.length > 0 ? drawableWidth / (candles.length - 1 || 1) : 0;
+  }, [candles.length, drawableWidth]);
+
+  const activeOrders = useMemo(() => {
+    return slots.filter((s) => s.status === "pending");
+  }, [slots]);
+
+  const tpPrice = useMemo(() => {
+    return averagePrice > 0 ? averagePrice + 16.6 : 0;
+  }, [averagePrice]);
+
+  const slPrice = useMemo(() => {
+    return averagePrice > 0
+      ? (direction === "short" ? basePrice - gridDistance * 5 : basePrice - gridDistance)
+      : 0;
+  }, [averagePrice, direction, basePrice, gridDistance]);
+
+  // Memoize band paths
+  const bandPaths = useMemo(() => {
+    if (candles.length === 0) return { upper: "", middle: "", lower: "" };
+    const step = drawableWidth / (candles.length - 1 || 1);
+    
+    const getPath = (type: "bbUpper" | "bbMiddle" | "bbLower") => {
+      return candles
+        .map((c, i) => {
+          const x = paddingLeft + i * step;
+          const y = getY(c[type]);
+          return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+        })
+        .join(" ");
+    };
+
+    return {
+      upper: getPath("bbUpper"),
+      middle: getPath("bbMiddle"),
+      lower: getPath("bbLower"),
+    };
+  }, [candles, drawableWidth, paddingLeft, getY]);
+
+  // Memoize band area fill path
+  const bandAreaPath = useMemo(() => {
+    if (candles.length <= 1) return "";
+    return `${bandPaths.upper} L ${paddingLeft + (candles.length - 1) * stepX} ${getY(candles[candles.length - 1].bbLower)} ${candles
+      .slice()
+      .reverse()
+      .map((c, i) => {
+        const x = paddingLeft + (candles.length - 1 - i) * stepX;
+        const y = getY(c.bbLower);
+        return `L ${x} ${y}`;
+      })
+      .join(" ")} Z`;
+  }, [candles, bandPaths.upper, stepX, paddingLeft, getY]);
+
+  // Throttle price updates during drag
+  const updatePriceFromEvent = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
+    if (!chartRef.current) return;
+    const rect = chartRef.current.getBoundingClientRect();
+    const relativeY = e.clientY - rect.top;
+    
+    const scaleY = (relativeY / rect.height) * height;
+    const targetPrice = parseFloat(getPriceFromY(scaleY).toFixed(2));
+    
+    const diff = targetPrice - currentPrice;
+    simulatePriceTick(diff);
+  }, [height, getPriceFromY, currentPrice, simulatePriceTick]);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if (chartRef.current) {
       chartRef.current.setPointerCapture(e.pointerId);
       setIsDragging(true);
       updatePriceFromEvent(e);
     }
-  };
+  }, [updatePriceFromEvent]);
 
-  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+  const handlePointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if (isDragging) {
       updatePriceFromEvent(e);
     }
-  };
+  }, [isDragging, updatePriceFromEvent]);
 
-  const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+  const handlePointerUp = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     if (isDragging && chartRef.current) {
       chartRef.current.releasePointerCapture(e.pointerId);
       setIsDragging(false);
     }
-  };
-
-  const updatePriceFromEvent = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!chartRef.current) return;
-    const rect = chartRef.current.getBoundingClientRect();
-    const relativeY = e.clientY - rect.top;
-    
-    // Scale standard height
-    const scaleY = (relativeY / rect.height) * height;
-    const targetPrice = parseFloat(getPriceFromY(scaleY).toFixed(2));
-    
-    // Call hook modifier
-    const diff = targetPrice - currentPrice;
-    simulatePriceTick(diff);
-  };
-
-  // Generate path points for Bollinger Bands
-  const getBandPath = (type: "bbUpper" | "bbMiddle" | "bbLower") => {
-    if (candles.length === 0) return "";
-    const stepX = drawableWidth / (candles.length - 1 || 1);
-    return candles
-      .map((c, i) => {
-        const x = paddingLeft + i * stepX;
-        const y = getY(c[type]);
-        return `${i === 0 ? "M" : "L"} ${x} ${y}`;
-      })
-      .join(" ");
-  };
-
-  const stepX = candles.length > 0 ? drawableWidth / (candles.length - 1 || 1) : 0;
-
-  // Active pricing guide markers
-  const activeOrders = slots.filter((s) => s.status === "pending");
-  const tpPrice = averagePrice > 0 ? averagePrice + 16.6 : 0;
-  const slPrice = averagePrice > 0 ? 2112.3 - 15 * 4 - 15 : 0; // 2037.3 Stop Loss Point
+  }, [isDragging]);
 
   return (
     <div id={id} className="glass-panel p-5 relative overflow-hidden flex flex-col gap-4">
@@ -148,7 +188,7 @@ export default function TradingChart({
           style={{ touchAction: "none" }}
         >
           {/* Horizontal grid lines */}
-          {[2020, 2040, 2060, 2080, 2100, 2120, 2140, 2160].map((gridPrice) => (
+          {[2020, 2040, 2060, 2080, 2100, 2120, 2140, 2160, 2180, 2200].map((gridPrice) => (
             <g key={gridPrice}>
               <line
                 x1={paddingLeft}
@@ -173,15 +213,7 @@ export default function TradingChart({
           {/* Render Bollinger Bands Area Fill */}
           {candles.length > 1 && (
             <path
-              d={`${getBandPath("bbUpper")} L ${paddingLeft + (candles.length - 1) * stepX} ${getY(candles[candles.length - 1].bbLower)} ${candles
-                .slice()
-                .reverse()
-                .map((c, i) => {
-                  const x = paddingLeft + (candles.length - 1 - i) * stepX;
-                  const y = getY(c.bbLower);
-                  return `L ${x} ${y}`;
-                })
-                .join(" ")} Z`}
+              d={bandAreaPath}
               fill="rgba(0, 242, 254, 0.015)"
               stroke="none"
             />
@@ -192,7 +224,7 @@ export default function TradingChart({
             <>
               {/* Upper Band */}
               <path
-                d={getBandPath("bbUpper")}
+                d={bandPaths.upper}
                 fill="none"
                 stroke="rgba(244, 63, 94, 0.35)"
                 strokeWidth={1.2}
@@ -200,7 +232,7 @@ export default function TradingChart({
               />
               {/* Middle Band */}
               <path
-                d={getBandPath("bbMiddle")}
+                d={bandPaths.middle}
                 fill="none"
                 stroke="rgba(245, 158, 11, 0.4)"
                 strokeWidth={1}
@@ -208,7 +240,7 @@ export default function TradingChart({
               />
               {/* Lower Band */}
               <path
-                d={getBandPath("bbLower")}
+                d={bandPaths.lower}
                 fill="none"
                 stroke="rgba(16, 185, 129, 0.5)"
                 strokeWidth={1.5}
@@ -375,19 +407,19 @@ export default function TradingChart({
           )}
 
           {/* 4. Steel Stop Loss Line */}
-          {averagePrice > 0 && (
+          {averagePrice > 0 && slPrice > 0 && (
             <g>
               <line
                 x1={paddingLeft}
-                y1={getY(2037.3)}
+                y1={getY(slPrice)}
                 x2={width - paddingRight}
-                y2={getY(2037.3)}
+                y2={getY(slPrice)}
                 stroke="#f43f5e"
                 strokeWidth={1.5}
               />
               <rect
                 x={paddingLeft + 5}
-                y={getY(2037.3) - 8}
+                y={getY(slPrice) - 8}
                 width={85}
                 height={16}
                 fill="rgba(244, 63, 94, 0.15)"
@@ -397,13 +429,13 @@ export default function TradingChart({
               />
               <text
                 x={paddingLeft + 10}
-                y={getY(2037.3) + 4}
+                y={getY(slPrice) + 4}
                 fill="#f43f5e"
                 fontSize="9"
                 fontWeight="bold"
                 className="mono-text"
               >
-                STOP LOSS: 2037.3
+                STOP LOSS: {slPrice.toFixed(1)}
               </text>
             </g>
           )}
@@ -460,4 +492,6 @@ export default function TradingChart({
       </div>
     </div>
   );
-}
+});
+
+export default TradingChart;

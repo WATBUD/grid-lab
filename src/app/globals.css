@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 /* -------------------------------------------------------------
  * PREMIUM DARK-MODE TRADING SYSTEM STYLES (Vanilla CSS Override)
@@ -31,8 +30,8 @@
   --glow-gold: rgba(245, 158, 11, 0.15);
 
   /* Font Families */
-  --font-sans: 'Plus Jakarta Sans', var(--font-geist-sans), system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', var(--font-geist-mono), monospace;
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
 body {
