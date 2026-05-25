@@ -8,8 +8,15 @@ import ControlPanel from "./components/ControlPanel";
 export default function Home() {
   const strategy = useMartingale();
   const [selectedStrategy, setSelectedStrategy] = useState("ETH-5M-FIBO-MARTINGALE-10X");
-  const [editableEquity, setEditableEquity] = useState(strategy.marginEquity);
+  const [editingEquity, setEditingEquity] = useState<number | null>(null);
   const [isEditingEquity, setIsEditingEquity] = useState(false);
+
+  // Update strategy when equity is edited
+  const handleEquityChange = (val: number) => {
+    setEditingEquity(val);
+    strategy.setMarginEquity(val);
+    strategy.setInitialCapital(val);
+  };
 
   const strategies = [
     { id: "ETH-5M-FIBO-MARTINGALE-10X", name: "ETH 5M Fibo Martingale 10X" },
@@ -51,17 +58,21 @@ export default function Home() {
               {isEditingEquity ? (
                 <input
                   type="number"
-                  value={editableEquity}
+                  value={editingEquity ?? strategy.marginEquity}
                   onChange={(e) => {
                     const val = parseFloat(e.target.value);
                     if (!isNaN(val)) {
-                      setEditableEquity(val);
+                      handleEquityChange(val);
                     }
                   }}
-                  onBlur={() => setIsEditingEquity(false)}
+                  onBlur={() => {
+                    setIsEditingEquity(false);
+                    setEditingEquity(null);
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
                       setIsEditingEquity(false);
+                      setEditingEquity(null);
                     }
                   }}
                   className="bg-transparent border-b border-cyan-500/50 focus:outline-none focus:border-cyan-400 w-32 text-sm text-white font-bold mono-text"
@@ -73,7 +84,7 @@ export default function Home() {
                   onClick={() => setIsEditingEquity(true)}
                   title="Click to edit"
                 >
-                  {formatUSD(editableEquity)}
+                  {formatUSD(strategy.marginEquity)}
                 </span>
               )}
             </div>

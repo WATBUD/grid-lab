@@ -781,6 +781,7 @@ export function useMartingale() {
     balance,
     floatingPnl,
     marginEquity,
+    setMarginEquity,
     realizedPnl,
     strategyStatus,
     averagePrice,
