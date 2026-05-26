@@ -19,6 +19,11 @@ const jetbrainsMono = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "QuantLab | ETH 5M Fibonacci Martingale Terminal",
   description: "ETH 5-Min K-Line Fibonacci Martingale Strategy Simulator with 10x Leverage",
+  manifest: "/manifest",
+  icons: {
+    icon: "/icon-512x512.svg",
+    apple: "/icon-512x512.svg",
+  },
 };
 
 export default function RootLayout({
