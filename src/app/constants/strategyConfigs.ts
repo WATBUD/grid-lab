@@ -1,15 +1,27 @@
+export enum StrategyId {
+  PESS = "Progressive Exposure Scaling Strategy (PESS)",
+  FIBONACCI = "Fibonacci Strategy",
+  DOUBLE_DOWN = "Double Down Strategy",
+}
+
 export const STRATEGY_CONFIGS = {
-  "MARTINGALE-1": {
-    name: "Martingale Grid 15.0",
+  [StrategyId.PESS]: {
+    name: StrategyId.PESS,
     basePrice: 2112.3,
     gridDistance: 10,
     positionSizeWeights: [1, 2, 4, 8, 12, 18, 25, 30],
   },
-  "MARTINGALE-2": {
-    name: "Martingale Grid 25.0",
+  [StrategyId.FIBONACCI]: {
+    name: StrategyId.FIBONACCI,
     basePrice: 2112.3,
-    gridDistance: 25.0,
+    gridDistance: 10,
     positionSizeWeights: [1, 1, 2, 3, 5, 8, 13, 21, 34],
+  },
+    [StrategyId.DOUBLE_DOWN]: {
+    name: StrategyId.DOUBLE_DOWN,
+    basePrice: 2112.3,
+    gridDistance: 10.0,
+    positionSizeWeights: [1, 2, 4, 8, 16, 32],
   },
 } as const;
 

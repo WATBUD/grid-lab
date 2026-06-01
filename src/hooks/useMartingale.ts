@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { STRATEGY_CONFIGS } from "@/app/constants/strategyConfigs";
+import { STRATEGY_CONFIGS, StrategyId } from "@/app/constants/strategyConfigs";
 
 // Types
 export interface SlotOrder {
@@ -54,19 +54,25 @@ export function useMartingale() {
   });
   const [leverage, setLeverage] = useState(10);
   const [basePrice, setBasePrice] = useState(2112.3);
-  const [gridDistance, setGridDistance] = useState(() => {
-    if (typeof window === 'undefined') return 15.0;
+  const [gridDistance, setGridDistance] = useState(15.0);
+
+  // Load gridDistance from localStorage on mount
+  useEffect(() => {
     const saved = localStorage.getItem("gridDistance");
-    const parsed = saved ? parseFloat(saved) : NaN;
-    return !isNaN(parsed) ? parsed : 15.0;
-  });
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed)) {
+        setGridDistance(parsed);
+      }
+    }
+  }, []);
 
   // Persist gridDistance changes
   useEffect(() => {
     localStorage.setItem("gridDistance", gridDistance.toString());
   }, [gridDistance]);
-  const [totalSlots] = useState(STRATEGY_CONFIGS["MARTINGALE-1"].positionSizeWeights.length);
-  const [currentStrategyId, setCurrentStrategyId] = useState<keyof typeof STRATEGY_CONFIGS>("MARTINGALE-1");
+  const [totalSlots] = useState(STRATEGY_CONFIGS[StrategyId.PESS].positionSizeWeights.length);
+  const [currentStrategyId, setCurrentStrategyId] = useState<StrategyId>(StrategyId.PESS);
   const [marginEquity, setMarginEquity] = useState(3125.0);
 
   // --- Dynamic Account States ---
