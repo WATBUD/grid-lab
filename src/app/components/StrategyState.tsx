@@ -8,6 +8,8 @@ interface StrategyStateProps {
   initialCapital: number;
   setInitialCapital?: (value: number) => void;
   setMarginEquity?: (value: number) => void;
+  gridDistance: number;
+  setGridDistance?: (value: number) => void;
 }
 
 export default function StrategyState({
@@ -16,50 +18,46 @@ export default function StrategyState({
   initialCapital,
   setInitialCapital,
   setMarginEquity,
+  gridDistance,
+  setGridDistance,
 }: StrategyStateProps) {
   
   // Local state for editable Account Equity
-  const [editableEquity, setEditableEquity] = useState(marginEquity);
-  const [isEditingEquity, setIsEditingEquity] = useState(false);
-
-  // Local state for editable Initial Capital
-  const [editableInitialCapital, setEditableInitialCapital] = useState(initialCapital);
-  const [isEditingCapital, setIsEditingCapital] = useState(false);
-
-  // Load saved equity from localStorage on mount
-  useEffect(() => {
+  const [editableEquity, setEditableEquity] = useState(() => {
     const saved = localStorage.getItem("accountEquity");
     if (saved) {
       const parsed = parseFloat(saved);
-      if (!isNaN(parsed)) {
-        setEditableEquity(parsed);
-        if (setMarginEquity) {
-          setMarginEquity(parsed);
-        }
-        // Also update Initial Capital to match
-        setEditableInitialCapital(parsed);
-        if (setInitialCapital) {
-          setInitialCapital(parsed);
-        }
+      if (!isNaN(parsed) && parsed >= 0) {
+        return parsed;
       }
     }
-  }, []); // Only run on mount
+    return marginEquity;
+  });
+  const [isEditingEquity, setIsEditingEquity] = useState(false);
 
-  // Save to localStorage when editableEquity changes
+  // Local state for editable Initial Capital
+  const [editableInitialCapital, setEditableInitialCapital] = useState(() => {
+    const saved = localStorage.getItem("initialCapital");
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed >= 0) {
+        return parsed;
+      }
+    }
+    return initialCapital;
+  });
+  const [isEditingCapital, setIsEditingCapital] = useState(false);
+
+  // Save to localStorage when equity editing ends
   useEffect(() => {
-    if (isEditingEquity) {
+    if (!isEditingEquity) {
       localStorage.setItem("accountEquity", editableEquity.toString());
-      // Also sync Initial Capital to match Account Equity
-      setEditableInitialCapital(editableEquity);
-      if (setInitialCapital) {
-        setInitialCapital(editableEquity);
-      }
     }
-  }, [editableEquity, isEditingEquity, setInitialCapital]);
+  }, [editableEquity, isEditingEquity]);
 
-  // Save to localStorage when editableInitialCapital changes
+  // Save to localStorage when initial capital editing ends
   useEffect(() => {
-    if (isEditingCapital) {
+    if (!isEditingCapital) {
       localStorage.setItem("initialCapital", editableInitialCapital.toString());
     }
   }, [editableInitialCapital, isEditingCapital]);
@@ -83,17 +81,22 @@ export default function StrategyState({
             value={editableEquity}
             onChange={(e) => {
               const val = parseFloat(e.target.value);
-              if (!isNaN(val)) {
+              if (!isNaN(val) && val >= 0) {
                 setEditableEquity(val);
-                if (setMarginEquity) {
-                  setMarginEquity(val);
-                }
               }
             }}
-            onBlur={() => setIsEditingEquity(false)}
+            onBlur={() => {
+              setIsEditingEquity(false);
+              if (setMarginEquity) {
+                setMarginEquity(editableEquity);
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 setIsEditingEquity(false);
+                if (setMarginEquity) {
+                  setMarginEquity(editableEquity);
+                }
               }
             }}
             className="text-2xl font-bold tracking-tight mono-text bg-transparent border-b border-cyan-500/50 focus:outline-none focus:border-cyan-400 w-full"
@@ -117,17 +120,22 @@ export default function StrategyState({
               value={editableInitialCapital}
               onChange={(e) => {
                 const val = parseFloat(e.target.value);
-                if (!isNaN(val)) {
+                if (!isNaN(val) && val >= 0) {
                   setEditableInitialCapital(val);
-                  if (setInitialCapital) {
-                    setInitialCapital(val);
-                  }
                 }
               }}
-              onBlur={() => setIsEditingCapital(false)}
+              onBlur={() => {
+                setIsEditingCapital(false);
+                if (setInitialCapital) {
+                  setInitialCapital(editableInitialCapital);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   setIsEditingCapital(false);
+                  if (setInitialCapital) {
+                    setInitialCapital(editableInitialCapital);
+                  }
                 }
               }}
               className="mono-text font-semibold text-slate-300 bg-transparent border-b border-cyan-500/50 focus:outline-none focus:border-cyan-400 w-24 text-right"

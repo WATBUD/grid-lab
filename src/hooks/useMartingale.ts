@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { STRATEGY_CONFIGS } from "@/app/constants/strategyConfigs";
 
 // Types
 export interface SlotOrder {
@@ -53,18 +54,20 @@ export function useMartingale() {
   });
   const [leverage, setLeverage] = useState(10);
   const [basePrice, setBasePrice] = useState(2112.3);
-  const [gridDistance, setGridDistance] = useState(15.0);
-  const [totalSlots] = useState(5);
-  const [currentStrategyId, setCurrentStrategyId] = useState("ETH-5M-FIBO-MARTINGALE-10X");
-  const [marginEquity, setMarginEquity] = useState(3125.0);
+  const [gridDistance, setGridDistance] = useState(() => {
+    if (typeof window === 'undefined') return 15.0;
+    const saved = localStorage.getItem("gridDistance");
+    const parsed = saved ? parseFloat(saved) : NaN;
+    return !isNaN(parsed) ? parsed : 15.0;
+  });
 
-  // Strategy configurations
-  const strategyConfigs = useMemo(() => ({
-    "ETH-5M-FIBO-MARTINGALE-10X": { basePrice: 2112.3, gridDistance: 15.0, initialCapital: 3125.0, asset: "ETH", timeframe: "5M" },
-    "ETH-15M-FIBO-MARTINGALE-10X": { basePrice: 2112.3, gridDistance: 25.0, initialCapital: 3125.0, asset: "ETH", timeframe: "15M" },
-    "BTC-5M-FIBO-MARTINGALE-10X": { basePrice: 42500.0, gridDistance: 300.0, initialCapital: 3125.0, asset: "BTC", timeframe: "5M" },
-    "BTC-15M-FIBO-MARTINGALE-10X": { basePrice: 42500.0, gridDistance: 500.0, initialCapital: 3125.0, asset: "BTC", timeframe: "15M" },
-  }), []);
+  // Persist gridDistance changes
+  useEffect(() => {
+    localStorage.setItem("gridDistance", gridDistance.toString());
+  }, [gridDistance]);
+  const [totalSlots] = useState(STRATEGY_CONFIGS["MARTINGALE-1"].positionSizeWeights.length);
+  const [currentStrategyId, setCurrentStrategyId] = useState<keyof typeof STRATEGY_CONFIGS>("MARTINGALE-1");
+  const [marginEquity, setMarginEquity] = useState(3125.0);
 
   // --- Dynamic Account States ---
   const [balance, setBalance] = useState(3125.0); // Capital available
@@ -120,7 +123,9 @@ export function useMartingale() {
 
   // --- Initialize Grid Matrix ---
   const resetGridSlots = useCallback((customBasePrice: number = basePrice, customGridDistance: number = gridDistance, dir: "long" | "short" = direction) => {
-    const matrixPercent = [0.08, 0.08, 0.16, 0.24, 0.44]; // 8%, 8%, 16%, 24%, 44%
+    const currentConfig = STRATEGY_CONFIGS[currentStrategyId];
+    const totalWeight = currentConfig.positionSizeWeights.reduce((a, b) => a + b, 0);
+    const matrixPercent = currentConfig.positionSizeWeights.map(w => w / totalWeight); // Convert weights to fractions
     const initialSlots: SlotOrder[] = matrixPercent.map((pct, idx) => {
       const trigger = dir === "long"
         ? customBasePrice - customGridDistance * idx
@@ -138,7 +143,7 @@ export function useMartingale() {
     });
     setSlots(initialSlots);
     return initialSlots;
-  }, [basePrice, gridDistance, initialCapital, leverage, direction]);
+  }, [basePrice, gridDistance, initialCapital, leverage, direction, currentStrategyId]);
 
   // Initial setup
   useEffect(() => {
@@ -263,8 +268,8 @@ export function useMartingale() {
   }, [floatingPnl, balance, totalEthSize, currentPrice, resetStrategy, addLog]);
 
   // --- Load Strategy Configuration ---
-  const loadStrategy = useCallback((strategyId: string) => {
-    const config = strategyConfigs[strategyId as keyof typeof strategyConfigs];
+  const loadStrategy = useCallback((strategyId: keyof typeof STRATEGY_CONFIGS) => {
+    const config = STRATEGY_CONFIGS[strategyId];
     if (!config) {
       addLog("warning", `Strategy ${strategyId} not found.`);
       return;
@@ -282,9 +287,9 @@ export function useMartingale() {
     // Load new configuration
     setBasePrice(config.basePrice);
     setGridDistance(config.gridDistance);
-    setInitialCapital(config.initialCapital);
-    setBalance(config.initialCapital);
-    setMarginEquity(config.initialCapital);
+    setInitialCapital(0);
+    setBalance(0);
+    setMarginEquity(0);
     setDirection("short");
 
     // Reset grid with new configuration
@@ -300,11 +305,11 @@ export function useMartingale() {
       const candleTime = new Date(timeBase.getTime() + i * 5 * 60 * 1000);
       const timeStr = `${candleTime.getHours().toString().padStart(2, "0")}:${candleTime.getMinutes().toString().padStart(2, "0")}`;
 
-      const change = (Math.random() - 0.48) * (config.asset === "BTC" ? 80.0 : 8.0);
+      const change = (Math.random() - 0.48) * 8.0;
       const open = price;
       const close = price + change;
-      const high = Math.max(open, close) + Math.random() * (config.asset === "BTC" ? 30.0 : 3.0);
-      const low = Math.min(open, close) - Math.random() * (config.asset === "BTC" ? 30.0 : 3.0);
+      const high = Math.max(open, close) + Math.random() * 3.0;
+      const low = Math.min(open, close) - Math.random() * 3.0;
 
       price = close;
 
@@ -325,8 +330,8 @@ export function useMartingale() {
     setCandles(initialCandles);
     setCurrentPrice(initialCandles[initialCandles.length - 1].close);
 
-    addLog("system", `Strategy loaded: ${config.asset} ${config.timeframe} Fibo Martingale 10X. Base price: $${config.basePrice}, Grid distance: ${config.gridDistance}`);
-  }, [strategyConfigs, resetGridSlots, addLog]);
+    addLog("system", `Strategy loaded. Base price: $${config.basePrice}, Grid distance: ${config.gridDistance}`);
+  }, [resetGridSlots, addLog]);
 
   // --- Select Direction (Long/Short) ---
   const selectDirection = useCallback((dir: "long" | "short") => {

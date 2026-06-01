@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useMartingale } from "@/hooks/useMartingale";
+import { STRATEGY_OPTIONS } from "@/app/constants/strategyConfigs";
 import GridMatrixTable from "./components/GridMatrixTable";
 import ControlPanel from "./components/ControlPanel";
 
@@ -18,16 +19,9 @@ export default function Home() {
   };
 
   // Handle strategy selection
-  const handleStrategyChange = (strategyId: string) => {
+  const handleStrategyChange = (strategyId: "MARTINGALE-1" | "MARTINGALE-2") => {
     strategy.loadStrategy(strategyId);
   };
-
-  const strategies = [
-    { id: "ETH-5M-FIBO-MARTINGALE-10X", name: "ETH 5M Fibo Martingale 10X" },
-    { id: "ETH-15M-FIBO-MARTINGALE-10X", name: "ETH 15M Fibo Martingale 10X" },
-    { id: "BTC-5M-FIBO-MARTINGALE-10X", name: "BTC 5M Fibo Martingale 10X" },
-    { id: "BTC-15M-FIBO-MARTINGALE-10X", name: "BTC 15M Fibo Martingale 10X" },
-  ];
 
   const formatUSD = (val: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -48,10 +42,10 @@ export default function Home() {
             </div>
             <select
               value={strategy.currentStrategyId}
-              onChange={(e) => handleStrategyChange(e.target.value)}
+              onChange={(e) => handleStrategyChange(e.target.value as "MARTINGALE-1" | "MARTINGALE-2")}
               className="bg-slate-900/50 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-500/50 font-medium cursor-pointer"
             >
-              {strategies.map((s) => (
+              {STRATEGY_OPTIONS.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
                 </option>
