@@ -67,7 +67,7 @@ export default function LogConsole({ logs, tradeHistory, id }: LogConsoleProps) 
             <div className="text-slate-600 italic text-center py-10">No terminal activity recorded yet.</div>
           ) : (
             logs.map((log) => (
-              <div key={log.id} className="log-message flex items-start gap-2 border-b border-white/[0.02] pb-1.5 last:border-b-0 leading-relaxed">
+              <div key={log.id} className="log-message flex items-start gap-2 border-b border-white/2 pb-1.5 last:border-b-0 leading-relaxed">
                 <span className="text-slate-500 shrink-0">[{log.timestamp}]</span>
                 <span className={`shrink-0 uppercase text-[9px] px-1 rounded bg-white/5 border border-white/5 font-semibold`}>
                   {log.type}
@@ -91,7 +91,7 @@ export default function LogConsole({ logs, tradeHistory, id }: LogConsoleProps) 
                 return (
                   <div
                     key={trade.id}
-                    className={`p-3 rounded-xl border flex items-center justify-between transition-all hover:bg-white/[0.01] ${
+                    className={`p-3 rounded-xl border flex items-center justify-between transition-all hover:bg-white/1 ${
                       isTp
                         ? "bg-emerald-500/5 border-emerald-500/20"
                         : "bg-rose-500/5 border-rose-500/20"

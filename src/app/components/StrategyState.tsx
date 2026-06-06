@@ -8,8 +8,6 @@ interface StrategyStateProps {
   initialCapital: number;
   setInitialCapital?: (value: number) => void;
   setMarginEquity?: (value: number) => void;
-  gridDistance: number;
-  setGridDistance?: (value: number) => void;
 }
 
 export default function StrategyState({
@@ -18,8 +16,6 @@ export default function StrategyState({
   initialCapital,
   setInitialCapital,
   setMarginEquity,
-  gridDistance,
-  setGridDistance,
 }: StrategyStateProps) {
   
   // Local state for editable Account Equity

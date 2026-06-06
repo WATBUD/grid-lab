@@ -1,4 +1,5 @@
 export enum StrategyId {
+  NONE = "Select Strategy",
   PESS = "Progressive Exposure Scaling Strategy (PESS)",
   FIBONACCI = "Fibonacci Strategy",
   DOUBLE_DOWN = "Double Down Strategy",

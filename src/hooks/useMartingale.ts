@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, startTransition } from "react";
 import { STRATEGY_CONFIGS, StrategyId } from "@/app/constants/strategyConfigs";
 
 // Types
@@ -47,37 +47,40 @@ export interface TradeHistory {
 
 export function useMartingale() {
   // --- Strategy Constants (Configurable in Settings) ---
-  const [initialCapital, setInitialCapital] = useState(() => {
-    if (typeof window === 'undefined') return 3125.0;
-    const saved = localStorage.getItem("initialCapital");
-    return saved ? parseFloat(saved) : 3125.0;
-  });
+  const [initialCapital, setInitialCapital] = useState(3125.0);
   const [leverage, setLeverage] = useState(10);
   const [basePrice, setBasePrice] = useState(2112.3);
   const [gridDistance, setGridDistance] = useState(15.0);
 
-  // Load gridDistance from localStorage on mount
+  // Sync from localStorage after hydration
   useEffect(() => {
-    const saved = localStorage.getItem("gridDistance");
-    if (saved) {
-      const parsed = parseFloat(saved);
-      if (!isNaN(parsed)) {
-        setGridDistance(parsed);
+    const savedCapital = localStorage.getItem("initialCapital");
+    const savedGridDistance = localStorage.getItem("gridDistance");
+    
+    startTransition(() => {
+      if (savedCapital) {
+        setInitialCapital(parseFloat(savedCapital));
       }
-    }
+      if (savedGridDistance) {
+        setGridDistance(parseFloat(savedGridDistance));
+      }
+    });
   }, []);
 
   // Persist gridDistance changes
   useEffect(() => {
     localStorage.setItem("gridDistance", gridDistance.toString());
   }, [gridDistance]);
-  const [totalSlots] = useState(STRATEGY_CONFIGS[StrategyId.PESS].positionSizeWeights.length);
-  const [currentStrategyId, setCurrentStrategyId] = useState<StrategyId>(StrategyId.PESS);
-  const [marginEquity, setMarginEquity] = useState(3125.0);
+
+  // Persist initialCapital changes
+  useEffect(() => {
+    localStorage.setItem("initialCapital", initialCapital.toString());
+  }, [initialCapital]);
+  const [totalSlots] = useState(0);
+  const [currentStrategyId, setCurrentStrategyId] = useState<StrategyId>(StrategyId.NONE);
 
   // --- Dynamic Account States ---
   const [balance, setBalance] = useState(3125.0); // Capital available
-  const [floatingPnl, setFloatingPnl] = useState(0.0);
   const [realizedPnl, setRealizedPnl] = useState(0.0);
   const [strategyStatus, setStrategyStatus] = useState<
     "inactive" | "running" | "paused_safety" | "tp_triggered" | "sl_triggered"
@@ -127,63 +130,21 @@ export function useMartingale() {
     ]);
   }, []);
 
-  // --- Initialize Grid Matrix ---
-  const resetGridSlots = useCallback((customBasePrice: number = basePrice, customGridDistance: number = gridDistance, dir: "long" | "short" = direction) => {
-    const currentConfig = STRATEGY_CONFIGS[currentStrategyId];
-    const totalWeight = currentConfig.positionSizeWeights.reduce((a, b) => a + b, 0);
-    const matrixPercent = currentConfig.positionSizeWeights.map(w => w / totalWeight); // Convert weights to fractions
-    const initialSlots: SlotOrder[] = matrixPercent.map((pct, idx) => {
-      const trigger = dir === "long"
-        ? customBasePrice - customGridDistance * idx
-        : customBasePrice + customGridDistance * idx;
-      const sizeUsd = initialCapital * pct;
-      const sizeEth = (sizeUsd * leverage) / Math.abs(trigger);
-      return {
-        slot: idx + 1,
-        triggerPrice: parseFloat(trigger.toFixed(2)),
-        sizePercent: pct * 100,
-        sizeUsd: parseFloat(sizeUsd.toFixed(2)),
-        sizeEth: parseFloat(sizeEth.toFixed(6)),
-        status: "pending",
-      };
-    });
-    setSlots(initialSlots);
-    return initialSlots;
-  }, [basePrice, gridDistance, initialCapital, leverage, direction, currentStrategyId]);
-
-  // Initial setup
+  // Initialize candles on client side only to avoid hydration mismatch
   useEffect(() => {
-    resetGridSlots();
-    // Generate some initial historical candles to render a nice chart
-    generateInitialCandles();
-    addLog("system", "Trading Terminal Initialized. Ready for entry signals.");
-  }, []);
-
-  // Recalculate trigger prices when basePrice or gridDistance changes
-  useEffect(() => {
-    if (strategyStatus === "inactive") {
-      resetGridSlots();
-    }
-  }, [basePrice, gridDistance, direction, resetGridSlots, strategyStatus]);
-
-  // --- Generate 30 Historical Candles with Bollinger Bands ---
-  const generateInitialCandles = () => {
     const initialCandles: Candle[] = [];
     let price = 2135.0;
     const timeBase = new Date();
-    timeBase.setMinutes(timeBase.getMinutes() - 30 * 5); // 30 candles back
+    timeBase.setMinutes(timeBase.getMinutes() - 30 * 5);
 
-    // Generate random path
     for (let i = 0; i < 30; i++) {
       const candleTime = new Date(timeBase.getTime() + i * 5 * 60 * 1000);
       const timeStr = `${candleTime.getHours().toString().padStart(2, "0")}:${candleTime.getMinutes().toString().padStart(2, "0")}`;
-      
-      const change = (Math.random() - 0.48) * 8.0; // slight upward drift
+      const change = (Math.random() - 0.48) * 8.0;
       const open = price;
       const close = price + change;
       const high = Math.max(open, close) + Math.random() * 3.0;
       const low = Math.min(open, close) - Math.random() * 3.0;
-      
       price = close;
 
       initialCandles.push({
@@ -199,14 +160,37 @@ export function useMartingale() {
       });
     }
 
-    // Compute Bollinger Bands (SMA 20, StdDev 2)
-    computeBollingerBands(initialCandles);
-    setCandles(initialCandles);
-    // Align currentPrice to the last candle close
-    setCurrentPrice(initialCandles[initialCandles.length - 1].close);
-  };
+    // Compute Bollinger Bands
+    const period = 20;
+    for (let i = 0; i < initialCandles.length; i++) {
+      if (i < period - 1) {
+        initialCandles[i].bbMiddle = initialCandles[i].close;
+        initialCandles[i].bbUpper = initialCandles[i].close + 15;
+        initialCandles[i].bbLower = initialCandles[i].close - 15;
+        continue;
+      }
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) {
+        sum += initialCandles[j].close;
+      }
+      const sma = sum / period;
+      let varianceSum = 0;
+      for (let j = i - period + 1; j <= i; j++) {
+        varianceSum += Math.pow(initialCandles[j].close - sma, 2);
+      }
+      const stdDev = Math.sqrt(varianceSum / period);
+      initialCandles[i].bbMiddle = parseFloat(sma.toFixed(2));
+      initialCandles[i].bbUpper = parseFloat((sma + 2 * stdDev).toFixed(2));
+      initialCandles[i].bbLower = parseFloat((sma - 2 * stdDev).toFixed(2));
+    }
 
-  const computeBollingerBands = (candleList: Candle[]) => {
+    startTransition(() => {
+      setCandles(initialCandles);
+    });
+  }, []);
+
+  // --- Compute Bollinger Bands ---
+  const computeBollingerBands = useCallback((candleList: Candle[]) => {
     const period = 20;
     for (let i = 0; i < candleList.length; i++) {
       if (i < period - 1) {
@@ -233,15 +217,55 @@ export function useMartingale() {
       candleList[i].bbUpper = parseFloat((sma + 2 * stdDev).toFixed(2));
       candleList[i].bbLower = parseFloat((sma - 2 * stdDev).toFixed(2));
     }
-  };
+  }, []);
+
+  // --- Initialize Grid Matrix ---
+  const resetGridSlots = useCallback((customBasePrice: number = basePrice, customGridDistance: number = gridDistance, dir: "long" | "short" = direction, strategyIdParam: StrategyId = currentStrategyId, customInitialCapital: number = initialCapital) => {
+    // If no strategy selected, return empty slots
+    if (strategyIdParam === StrategyId.NONE) {
+      setSlots([]);
+      return [];
+    }
+
+    const currentConfig = STRATEGY_CONFIGS[strategyIdParam];
+    const totalWeight = currentConfig.positionSizeWeights.reduce((a: number, b: number) => a + b, 0);
+    // For Fibonacci, use raw weights as percentages directly; for others, use fractions of total
+    const matrixPercent = strategyIdParam === StrategyId.FIBONACCI
+      ? currentConfig.positionSizeWeights.map((w: number) => w / 100) // Convert to decimal (e.g., 1 -> 0.01)
+      : currentConfig.positionSizeWeights.map((w: number) => w / totalWeight); // Convert weights to fractions
+    const initialSlots: SlotOrder[] = matrixPercent.map((pct: number, idx: number) => {
+      const trigger = dir === "long"
+        ? customBasePrice - customGridDistance * idx
+        : customBasePrice + customGridDistance * idx;
+      const sizeUsd = customInitialCapital * pct;
+      const sizeEth = (sizeUsd * leverage) / Math.abs(trigger);
+      return {
+        slot: idx + 1,
+        triggerPrice: parseFloat(trigger.toFixed(2)),
+        sizePercent: pct * 100,
+        sizeUsd: parseFloat(sizeUsd.toFixed(2)),
+        sizeEth: parseFloat(sizeEth.toFixed(6)),
+        status: "pending",
+      };
+    });
+    setSlots(initialSlots);
+    return initialSlots;
+  }, [basePrice, gridDistance, initialCapital, leverage, direction, currentStrategyId]);
+
+  // Initial setup
+  useEffect(() => {
+    startTransition(() => {
+      addLog("system", "Trading Terminal Initialized. Ready for entry signals.");
+    });
+  }, [addLog]);
 
   // --- Reset Entire Strategy Position & State ---
   const resetStrategy = useCallback((newBalance: number = balance, exitType?: "TP" | "SL", pnlAmt: number = 0) => {
+    setBalance(newBalance);
     setStrategyStatus("inactive");
     setAveragePrice(0.0);
     setTotalEthSize(0.0);
     setTotalUsdMargin(0.0);
-    setFloatingPnl(0.0);
     setRightSidePaused(false);
     
     // Reset slot order forms
@@ -256,7 +280,7 @@ export function useMartingale() {
     } else {
       addLog("system", "Strategy forcefully reset. Active positions liquidated.");
     }
-  }, [balance, resetGridSlots, initialCapital]);
+  }, [balance, resetGridSlots, initialCapital, addLog]);
 
   // --- Force Market Close ---
   const forceMarketClose = useCallback(() => {
@@ -264,17 +288,30 @@ export function useMartingale() {
       addLog("warning", "No active positions to close.");
       return;
     }
-    const finalPnl = floatingPnl;
+    const finalPnl = (currentPrice - averagePrice) * totalEthSize;
     const finalBalance = balance + finalPnl;
     setBalance(parseFloat(finalBalance.toFixed(2)));
     setRealizedPnl((prev) => parseFloat((prev + finalPnl).toFixed(2)));
 
     resetStrategy(finalBalance, undefined);
     addLog("system", `Emergency liquidation triggered. Closed position of ${totalEthSize.toFixed(4)} ETH at current price $${currentPrice.toFixed(2)}. Realized PnL: $${finalPnl.toFixed(2)}.`);
-  }, [floatingPnl, balance, totalEthSize, currentPrice, resetStrategy, addLog]);
+  }, [balance, totalEthSize, currentPrice, averagePrice, resetStrategy, addLog]);
 
   // --- Load Strategy Configuration ---
-  const loadStrategy = useCallback((strategyId: keyof typeof STRATEGY_CONFIGS) => {
+  const loadStrategy = useCallback((strategyId: StrategyId) => {
+    // If NONE is selected, clear everything
+    if (strategyId === StrategyId.NONE) {
+      setStrategyStatus("inactive");
+      setAveragePrice(0.0);
+      setTotalEthSize(0.0);
+      setTotalUsdMargin(0.0);
+      setRightSidePaused(false);
+      setCurrentStrategyId(StrategyId.NONE);
+      setSlots([]);
+      addLog("system", "Strategy cleared. Please select a strategy.");
+      return;
+    }
+
     const config = STRATEGY_CONFIGS[strategyId];
     if (!config) {
       addLog("warning", `Strategy ${strategyId} not found.`);
@@ -286,20 +323,18 @@ export function useMartingale() {
     setAveragePrice(0.0);
     setTotalEthSize(0.0);
     setTotalUsdMargin(0.0);
-    setFloatingPnl(0.0);
     setRightSidePaused(false);
     setCurrentStrategyId(strategyId);
 
     // Load new configuration
     setBasePrice(config.basePrice);
     setGridDistance(config.gridDistance);
-    setInitialCapital(0);
-    setBalance(0);
-    setMarginEquity(0);
+    setInitialCapital(3125.0);
+    setBalance(3125.0);
     setDirection("short");
 
     // Reset grid with new configuration
-    resetGridSlots(config.basePrice, config.gridDistance, "short");
+    resetGridSlots(config.basePrice, config.gridDistance, "short", strategyId, 3125.0);
 
     // Regenerate candles with new base price
     const initialCandles: Candle[] = [];
@@ -337,6 +372,7 @@ export function useMartingale() {
     setCurrentPrice(initialCandles[initialCandles.length - 1].close);
 
     addLog("system", `Strategy loaded. Base price: $${config.basePrice}, Grid distance: ${config.gridDistance}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetGridSlots, addLog]);
 
   // --- Select Direction (Long/Short) ---
@@ -346,28 +382,66 @@ export function useMartingale() {
     setAveragePrice(0.0);
     setTotalEthSize(0.0);
     setTotalUsdMargin(0.0);
-    setFloatingPnl(0.0);
     setRightSidePaused(false);
     resetGridSlots(basePrice, gridDistance, dir);
     addLog("system", `Direction set to ${dir === "long" ? "LONG (做多) ▲ Grid +" + gridDistance : "SHORT (做空) ▼ Grid -" + gridDistance} from base $${basePrice}.`);
   }, [basePrice, gridDistance, resetGridSlots, addLog]);
 
-  // --- Calculate Live PnL ---
-  useEffect(() => {
+  // --- Derived State: Calculate Live PnL ---
+  const floatingPnl = (() => {
     if (totalEthSize > 0 && averagePrice > 0) {
-      // Floating PnL = (Current Price - Average Price) * Total Leveraged ETH
-      // Note: totalEthSize is already leveraged inside slots size calculations: (sizeUsd * leverage / triggerPrice)
-      // So physical PnL is (Current - Avg) * totalEthSize
       const pnl = (currentPrice - averagePrice) * totalEthSize;
-      setFloatingPnl(parseFloat(pnl.toFixed(2)));
-      
-      // Calculate dynamic equity
-      const equity = balance + pnl;
-      setMarginEquity(parseFloat(equity.toFixed(2)));
-    } else {
-      setFloatingPnl(0.0);
+      return parseFloat(pnl.toFixed(2));
     }
-  }, [currentPrice, averagePrice, totalEthSize, balance]);
+    return 0.0;
+  })();
+
+  const marginEquity = balance + floatingPnl;
+
+  // Recalculates position average holding price and sizes from active slots
+  const recalculatePosition = (activeSlots: SlotOrder[]) => {
+    const filledSlots = activeSlots.filter((s) => s.status === "filled");
+    if (filledSlots.length === 0) {
+      setAveragePrice(0.0);
+      setTotalEthSize(0.0);
+      setTotalUsdMargin(0.0);
+      return;
+    }
+
+    const totalMargin = filledSlots.reduce((acc, curr) => acc + curr.sizeUsd, 0);
+    
+    // Average price = Sum(Margin_USD) / Sum(Margin_USD / triggerPrice)
+    const sumWeightedReciprocal = filledSlots.reduce(
+      (acc, curr) => acc + (curr.sizeUsd / (curr.filledAt || curr.triggerPrice)),
+      0
+    );
+
+    const calculatedAvgPrice = totalMargin / sumWeightedReciprocal;
+
+    // Total Leveraged ETH controlled
+    const totalEth = filledSlots.reduce((acc, curr) => acc + curr.sizeEth, 0);
+
+    setAveragePrice(parseFloat(calculatedAvgPrice.toFixed(2)));
+    setTotalEthSize(parseFloat(totalEth.toFixed(6)));
+    setTotalUsdMargin(parseFloat(totalMargin.toFixed(2)));
+  };
+
+  // Core execution: Trigger a specific martingale limit slot order
+  const triggerSlotOrder = useCallback((slotIndex: number, fillPrice: number) => {
+    setSlots((prevSlots) => {
+      const updated = prevSlots.map((s) => {
+        if (s.slot === slotIndex && s.status === "pending") {
+          addLog("order", `LIMIT FILL: Slot ${slotIndex} Order triggered and filled at $${fillPrice.toFixed(2)}. Allocated Margin: $${s.sizeUsd.toFixed(2)}.`);
+          return { ...s, status: "filled" as const, filledAt: fillPrice };
+        }
+        return s;
+      });
+
+      // Re-calculate Position average holding price and size
+      recalculatePosition(updated);
+      return updated;
+    });
+  }, [addLog]);
 
   // --- Core Trading Signal and Order Matching Loop ---
   const handlePriceTick = useCallback((newPrice: number, latestCandleCompleted: boolean = false) => {
@@ -378,6 +452,30 @@ export function useMartingale() {
     const lastCandle = candles[candles.length - 1];
     const lowerBand = lastCandle.bbLower;
     const middleBand = lastCandle.bbMiddle;
+
+    // Match active limit grid prices
+    const matchGridOrders = (newPrice: number) => {
+      slots.forEach((s) => {
+        if (s.status === "pending") {
+          const triggered = direction === "short"
+            ? newPrice >= s.triggerPrice
+            : newPrice <= s.triggerPrice;
+          if (triggered) triggerSlotOrder(s.slot, s.triggerPrice);
+        }
+      });
+    };
+
+    // Match limit orders that were blocked during safety pause
+    const matchBlockedLimitOrders = (newPrice: number) => {
+      slots.forEach((s) => {
+        if (s.status === "pending") {
+          const triggered = direction === "short"
+            ? newPrice >= s.triggerPrice
+            : newPrice <= s.triggerPrice;
+          if (triggered) triggerSlotOrder(s.slot, newPrice);
+        }
+      });
+    };
 
     // --- State: INACTIVE (Monitoring for Entry) ---
     if (strategyStatus === "inactive") {
@@ -522,76 +620,9 @@ export function useMartingale() {
     initialCapital,
     resetStrategy,
     addLog,
+    direction,
+    triggerSlotOrder,
   ]);
-
-  // Core execution: Trigger a specific martingale limit slot order
-  const triggerSlotOrder = (slotIndex: number, fillPrice: number) => {
-    setSlots((prevSlots) => {
-      const updated = prevSlots.map((s) => {
-        if (s.slot === slotIndex && s.status === "pending") {
-          addLog("order", `LIMIT FILL: Slot ${slotIndex} Order triggered and filled at $${fillPrice.toFixed(2)}. Allocated Margin: $${s.sizeUsd.toFixed(2)}.`);
-          return { ...s, status: "filled" as const, filledAt: fillPrice };
-        }
-        return s;
-      });
-
-      // Re-calculate Position average holding price and size
-      recalculatePosition(updated);
-      return updated;
-    });
-  };
-
-  // Recalculates position average holding price and sizes from active slots
-  const recalculatePosition = (activeSlots: SlotOrder[]) => {
-    const filledSlots = activeSlots.filter((s) => s.status === "filled");
-    if (filledSlots.length === 0) {
-      setAveragePrice(0.0);
-      setTotalEthSize(0.0);
-      setTotalUsdMargin(0.0);
-      return;
-    }
-
-    const totalMargin = filledSlots.reduce((acc, curr) => acc + curr.sizeUsd, 0);
-    
-    // Average price = Sum(Margin_USD) / Sum(Margin_USD / triggerPrice)
-    const sumWeightedReciprocal = filledSlots.reduce(
-      (acc, curr) => acc + (curr.sizeUsd / (curr.filledAt || curr.triggerPrice)),
-      0
-    );
-
-    const calculatedAvgPrice = totalMargin / sumWeightedReciprocal;
-
-    // Total Leveraged ETH controlled
-    const totalEth = filledSlots.reduce((acc, curr) => acc + curr.sizeEth, 0);
-
-    setAveragePrice(parseFloat(calculatedAvgPrice.toFixed(2)));
-    setTotalEthSize(parseFloat(totalEth.toFixed(6)));
-    setTotalUsdMargin(parseFloat(totalMargin.toFixed(2)));
-  };
-
-  // Match active limit grid prices
-  const matchGridOrders = (newPrice: number) => {
-    slots.forEach((s) => {
-      if (s.status === "pending") {
-        const triggered = direction === "short"
-          ? newPrice >= s.triggerPrice
-          : newPrice <= s.triggerPrice;
-        if (triggered) triggerSlotOrder(s.slot, s.triggerPrice);
-      }
-    });
-  };
-
-  // Match limit orders that were blocked during safety pause
-  const matchBlockedLimitOrders = (newPrice: number) => {
-    slots.forEach((s) => {
-      if (s.status === "pending") {
-        const triggered = direction === "short"
-          ? newPrice >= s.triggerPrice
-          : newPrice <= s.triggerPrice;
-        if (triggered) triggerSlotOrder(s.slot, newPrice);
-      }
-    });
-  };
 
   // --- Push a complete new simulated Candle ---
   const pushNewCandle = useCallback((open: number, high: number, low: number, close: number, isBearishBlock: boolean = false) => {
@@ -626,6 +657,7 @@ export function useMartingale() {
 
     // Feed new price to hook trigger
     handlePriceTick(close, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handlePriceTick]);
 
   // --- Trigger Presets Simulation Actions ---
@@ -640,12 +672,10 @@ export function useMartingale() {
     // Reset layout
     const initialBalance = 3125.0;
     setBalance(initialBalance);
-    setFloatingPnl(0.0);
-    setMarginEquity(initialBalance);
     
     // Clear and build fresh candles matching base
     const startPrice = 2125.0;
-    let localCandles: Candle[] = [];
+    const localCandles: Candle[] = [];
     let p = startPrice;
     
     // Draw 20 stable sideways candles
@@ -674,7 +704,7 @@ export function useMartingale() {
     
     // Reset Grid Orders with standard settings
     setDirection("short");
-    const activeSlots = resetGridSlots(2112.3, 15.0, "short");
+    resetGridSlots(2112.3, 15.0, "short");
     setStrategyStatus("inactive");
     setAveragePrice(0.0);
     setTotalEthSize(0.0);
@@ -692,11 +722,11 @@ export function useMartingale() {
     autoSimIntervalRef.current = setInterval(() => {
       step++;
       
-      let o = currentLocalPrice;
+      const o = currentLocalPrice;
       let c = o;
       let h = o;
       let l = o;
-      let latestCandleCompleted = true;
+      const latestCandleCompleted = true;
       let blockCheck = false;
 
       if (scenarioName === "profit") {
@@ -822,6 +852,7 @@ export function useMartingale() {
 
     }, intervalTime);
 
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetGridSlots, handlePriceTick, balance, initialCapital, slots]);
 
   // --- Manual tick price modifications ---
@@ -842,6 +873,7 @@ export function useMartingale() {
     });
 
     handlePriceTick(nextPrice, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPrice, handlePriceTick]);
 
   // Clean interval on unmount
@@ -864,9 +896,9 @@ export function useMartingale() {
     setGridDistance,
     totalSlots,
     balance,
+    setBalance,
     floatingPnl,
     marginEquity,
-    setMarginEquity,
     realizedPnl,
     strategyStatus,
     averagePrice,

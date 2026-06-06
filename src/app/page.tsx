@@ -14,13 +14,21 @@ export default function Home() {
   // Update strategy when equity is edited
   const handleEquityChange = (val: number) => {
     setEditingEquity(val);
-    strategy.setMarginEquity(val);
     strategy.setInitialCapital(val);
+    strategy.setBalance(val);
   };
 
   // Handle strategy selection
   const handleStrategyChange = (strategyId: StrategyId) => {
     strategy.loadStrategy(strategyId);
+  };
+
+  // Handle copy strategy name
+  const handleCopyStrategyName = () => {
+    const currentStrategy = STRATEGY_OPTIONS.find(s => s.id === strategy.currentStrategyId);
+    if (currentStrategy) {
+      navigator.clipboard.writeText(currentStrategy.name);
+    }
   };
 
   const formatUSD = (val: number) => {
@@ -37,10 +45,10 @@ export default function Home() {
       <header className="border-b border-white/5 bg-slate-950/35 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-3 sm:py-4">
           <div className="flex flex-wrap items-center gap-3 sm:gap-4">
-            <div className="h-7 w-7 rounded-lg bg-gradient-to-tr from-cyan-400 to-indigo-600 flex items-center justify-center shadow-md shadow-cyan-400/20 flex-shrink-0">
+            <div className="h-7 w-7 rounded-lg bg-linear-to-tr from-cyan-400 to-indigo-600 flex items-center justify-center shadow-md shadow-cyan-400/20 shrink-0">
               <span className="text-[11px] font-bold text-slate-950 font-mono">QL</span>
             </div>
-            <div className="flex-shrink-0 min-w-0">
+            <div className="shrink-0 min-w-0 flex items-center gap-2">
               <select
                 value={strategy.currentStrategyId}
                 onChange={(e) => handleStrategyChange(e.target.value as StrategyId)}
@@ -52,8 +60,17 @@ export default function Home() {
                   </option>
                 ))}
               </select>
+              <button
+                onClick={handleCopyStrategyName}
+                className="shrink-0 h-7 w-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors"
+                title="Copy strategy name"
+              >
+                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </button>
             </div>
-            <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 px-3 py-2 sm:py-1.5 rounded-lg flex-shrink-0">
+            <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 px-3 py-2 sm:py-1.5 rounded-lg shrink-0">
               <span className="text-[10px] sm:text-[10px] text-cyan-300 font-medium">Equity:</span>
               {isEditingEquity ? (
                 <input
@@ -102,6 +119,7 @@ export default function Home() {
             slots={strategy.slots}
             averagePrice={strategy.averagePrice}
             id="matrix-ledger"
+            strategyId={strategy.currentStrategyId}
           />
         </section>
 
@@ -125,12 +143,6 @@ export default function Home() {
       {/* 3. Footer Terminal Stats */}
       <footer className="border-t border-white/5 bg-slate-950/20 py-4 mt-auto">
         <div className="max-w-[1600px] mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-2 text-[10px] text-slate-500 font-medium font-mono">
-          <div>
-            SYSTEM: OK // ENGINE: FIBONACCI-MARTINGALE-V1.0
-          </div>
-          <div>
-            10X 合約高槓桿風險警示：斐波那契馬丁非無風險套利，遇黑天鵝直下時請務必啟用右側交易防護並嚴格執行鋼鐵停損。
-          </div>
           <div>
             © 2026 QUANTLAB GLOBAL. ALL SIMULATORS LOADED.
           </div>
