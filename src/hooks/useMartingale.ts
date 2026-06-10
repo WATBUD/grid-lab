@@ -3,6 +3,31 @@
 import { useState, useEffect, useCallback, useRef, startTransition } from "react";
 import { STRATEGY_CONFIGS, StrategyId } from "@/app/constants/strategyConfigs";
 
+const DEFAULT_STRATEGY_ID = Object.keys(STRATEGY_CONFIGS)[0] as keyof typeof STRATEGY_CONFIGS;
+const DEFAULT_STRATEGY_CONFIG = STRATEGY_CONFIGS[DEFAULT_STRATEGY_ID];
+const DEFAULT_INITIAL_CAPITAL = 3125.0;
+const DEFAULT_LEVERAGE = 10;
+const DEFAULT_DIRECTION: "long" | "short" = "short";
+
+const getStrategyWeights = (strategyId: keyof typeof STRATEGY_CONFIGS): number[] => [
+  ...STRATEGY_CONFIGS[strategyId].positionSizeWeights,
+];
+
+const createFibonacciWeights = (length: number): number[] => {
+  const slotCount = Math.max(1, Math.floor(length));
+  const weights: number[] = [];
+
+  for (let i = 0; i < slotCount; i++) {
+    if (i < 2) {
+      weights.push(1);
+    } else {
+      weights.push(weights[i - 1] + weights[i - 2]);
+    }
+  }
+
+  return weights;
+};
+
 // Types
 export interface SlotOrder {
   slot: number;
@@ -45,12 +70,51 @@ export interface TradeHistory {
   exitPrice: number;
 }
 
+const createGridSlots = (
+  strategyId: keyof typeof STRATEGY_CONFIGS,
+  positionSizeWeights: number[],
+  basePrice: number,
+  gridDistance: number,
+  direction: "long" | "short",
+  initialCapital: number,
+  leverage: number
+): SlotOrder[] => {
+  const safeWeights = positionSizeWeights.filter((weight) => Number.isFinite(weight) && weight > 0);
+  const totalWeight = safeWeights.reduce((a: number, b: number) => a + b, 0);
+  const matrixPercent = strategyId === StrategyId.FIBONACCI
+    ? safeWeights.map((w: number) => w / 100)
+    : safeWeights.map((w: number) => w / totalWeight);
+
+  return matrixPercent.map((pct: number, idx: number) => {
+    const trigger = direction === "long"
+      ? basePrice - gridDistance * idx
+      : basePrice + gridDistance * idx;
+    const sizeUsd = initialCapital * pct;
+    const sizeEth = (sizeUsd * leverage) / Math.abs(trigger);
+
+    return {
+      slot: idx + 1,
+      triggerPrice: parseFloat(trigger.toFixed(2)),
+      sizePercent: pct * 100,
+      sizeUsd: parseFloat(sizeUsd.toFixed(2)),
+      sizeEth: parseFloat(sizeEth.toFixed(6)),
+      status: "pending",
+    };
+  });
+};
+
 export function useMartingale() {
   // --- Strategy Constants (Configurable in Settings) ---
-  const [initialCapital, setInitialCapital] = useState(3125.0);
-  const [leverage, setLeverage] = useState(10);
-  const [basePrice, setBasePrice] = useState(2112.3);
-  const [gridDistance, setGridDistance] = useState(15.0);
+  const [initialCapital, setInitialCapital] = useState<number>(DEFAULT_INITIAL_CAPITAL);
+  const [leverage, setLeverage] = useState<number>(DEFAULT_LEVERAGE);
+  const [basePrice, setBasePrice] = useState<number>(DEFAULT_STRATEGY_CONFIG.basePrice);
+  const [gridDistance, setGridDistance] = useState<number>(DEFAULT_STRATEGY_CONFIG.gridDistance);
+  const [positionSizeWeights, setPositionSizeWeights] = useState<number[]>(() => getStrategyWeights(DEFAULT_STRATEGY_ID));
+  const [balance, setBalance] = useState(DEFAULT_INITIAL_CAPITAL); // Capital available
+
+  const setFibonacciWeightsLength = useCallback((length: number) => {
+    setPositionSizeWeights(createFibonacciWeights(length));
+  }, []);
 
   // Sync from localStorage after hydration
   useEffect(() => {
@@ -59,7 +123,9 @@ export function useMartingale() {
     
     startTransition(() => {
       if (savedCapital) {
-        setInitialCapital(parseFloat(savedCapital));
+        const parsedCapital = parseFloat(savedCapital);
+        setInitialCapital(parsedCapital);
+        setBalance(parsedCapital);
       }
       if (savedGridDistance) {
         setGridDistance(parseFloat(savedGridDistance));
@@ -76,11 +142,11 @@ export function useMartingale() {
   useEffect(() => {
     localStorage.setItem("initialCapital", initialCapital.toString());
   }, [initialCapital]);
+
   const [totalSlots] = useState(0);
-  const [currentStrategyId, setCurrentStrategyId] = useState<StrategyId>(StrategyId.NONE);
+  const [currentStrategyId, setCurrentStrategyId] = useState<StrategyId>(DEFAULT_STRATEGY_ID);
 
   // --- Dynamic Account States ---
-  const [balance, setBalance] = useState(3125.0); // Capital available
   const [realizedPnl, setRealizedPnl] = useState(0.0);
   const [strategyStatus, setStrategyStatus] = useState<
     "inactive" | "running" | "paused_safety" | "tp_triggered" | "sl_triggered"
@@ -92,14 +158,24 @@ export function useMartingale() {
   const [totalUsdMargin, setTotalUsdMargin] = useState(0.0);
 
   // --- Active Grid Slots ---
-  const [slots, setSlots] = useState<SlotOrder[]>([]);
+  const [slots, setSlots] = useState<SlotOrder[]>(() =>
+    createGridSlots(
+      DEFAULT_STRATEGY_ID,
+      getStrategyWeights(DEFAULT_STRATEGY_ID),
+      DEFAULT_STRATEGY_CONFIG.basePrice,
+      DEFAULT_STRATEGY_CONFIG.gridDistance,
+      DEFAULT_DIRECTION,
+      DEFAULT_INITIAL_CAPITAL,
+      DEFAULT_LEVERAGE
+    )
+  );
 
   // --- Safety System Configuration ---
   const [rightSideFilterEnabled, setRightSideFilterEnabled] = useState(true);
   const [rightSidePaused, setRightSidePaused] = useState(false);
 
   // --- Direction State ---
-  const [direction, setDirection] = useState<"long" | "short">("short");
+  const [direction, setDirection] = useState<"long" | "short">(DEFAULT_DIRECTION);
 
   // --- Interactive Simulation States ---
   const [currentPrice, setCurrentPrice] = useState(2125.0);
@@ -220,37 +296,17 @@ export function useMartingale() {
   }, []);
 
   // --- Initialize Grid Matrix ---
-  const resetGridSlots = useCallback((customBasePrice: number = basePrice, customGridDistance: number = gridDistance, dir: "long" | "short" = direction, strategyIdParam: StrategyId = currentStrategyId, customInitialCapital: number = initialCapital) => {
+  const resetGridSlots = useCallback((customBasePrice: number = basePrice, customGridDistance: number = gridDistance, dir: "long" | "short" = direction, strategyIdParam: StrategyId = currentStrategyId, customInitialCapital: number = initialCapital, customPositionSizeWeights: number[] = positionSizeWeights) => {
     // If no strategy selected, return empty slots
     if (strategyIdParam === StrategyId.NONE) {
       setSlots([]);
       return [];
     }
 
-    const currentConfig = STRATEGY_CONFIGS[strategyIdParam];
-    const totalWeight = currentConfig.positionSizeWeights.reduce((a: number, b: number) => a + b, 0);
-    // For Fibonacci, use raw weights as percentages directly; for others, use fractions of total
-    const matrixPercent = strategyIdParam === StrategyId.FIBONACCI
-      ? currentConfig.positionSizeWeights.map((w: number) => w / 100) // Convert to decimal (e.g., 1 -> 0.01)
-      : currentConfig.positionSizeWeights.map((w: number) => w / totalWeight); // Convert weights to fractions
-    const initialSlots: SlotOrder[] = matrixPercent.map((pct: number, idx: number) => {
-      const trigger = dir === "long"
-        ? customBasePrice - customGridDistance * idx
-        : customBasePrice + customGridDistance * idx;
-      const sizeUsd = customInitialCapital * pct;
-      const sizeEth = (sizeUsd * leverage) / Math.abs(trigger);
-      return {
-        slot: idx + 1,
-        triggerPrice: parseFloat(trigger.toFixed(2)),
-        sizePercent: pct * 100,
-        sizeUsd: parseFloat(sizeUsd.toFixed(2)),
-        sizeEth: parseFloat(sizeEth.toFixed(6)),
-        status: "pending",
-      };
-    });
+    const initialSlots = createGridSlots(strategyIdParam, customPositionSizeWeights, customBasePrice, customGridDistance, dir, customInitialCapital, leverage);
     setSlots(initialSlots);
     return initialSlots;
-  }, [basePrice, gridDistance, initialCapital, leverage, direction, currentStrategyId]);
+  }, [basePrice, gridDistance, initialCapital, leverage, direction, currentStrategyId, positionSizeWeights]);
 
   // Initial setup
   useEffect(() => {
@@ -258,6 +314,15 @@ export function useMartingale() {
       addLog("system", "Trading Terminal Initialized. Ready for entry signals.");
     });
   }, [addLog]);
+
+  // Recalculate slots when initialCapital changes (if a strategy is selected)
+  useEffect(() => {
+    if (currentStrategyId !== StrategyId.NONE && positionSizeWeights.length > 0) {
+      startTransition(() => {
+        resetGridSlots(basePrice, gridDistance, direction, currentStrategyId, initialCapital, positionSizeWeights);
+      });
+    }
+  }, [initialCapital, currentStrategyId, basePrice, gridDistance, direction, resetGridSlots, positionSizeWeights]);
 
   // --- Reset Entire Strategy Position & State ---
   const resetStrategy = useCallback((newBalance: number = balance, exitType?: "TP" | "SL", pnlAmt: number = 0) => {
@@ -307,6 +372,7 @@ export function useMartingale() {
       setTotalUsdMargin(0.0);
       setRightSidePaused(false);
       setCurrentStrategyId(StrategyId.NONE);
+      setPositionSizeWeights([]);
       setSlots([]);
       addLog("system", "Strategy cleared. Please select a strategy.");
       return;
@@ -318,6 +384,8 @@ export function useMartingale() {
       return;
     }
 
+    const retainedCapital = initialCapital;
+
     // Reset all state
     setStrategyStatus("inactive");
     setAveragePrice(0.0);
@@ -325,16 +393,16 @@ export function useMartingale() {
     setTotalUsdMargin(0.0);
     setRightSidePaused(false);
     setCurrentStrategyId(strategyId);
+    setPositionSizeWeights(getStrategyWeights(strategyId));
 
     // Load new configuration
     setBasePrice(config.basePrice);
     setGridDistance(config.gridDistance);
-    setInitialCapital(3125.0);
-    setBalance(3125.0);
+    setBalance(retainedCapital);
     setDirection("short");
 
     // Reset grid with new configuration
-    resetGridSlots(config.basePrice, config.gridDistance, "short", strategyId, 3125.0);
+    resetGridSlots(config.basePrice, config.gridDistance, "short", strategyId, retainedCapital, getStrategyWeights(strategyId));
 
     // Regenerate candles with new base price
     const initialCandles: Candle[] = [];
@@ -372,8 +440,7 @@ export function useMartingale() {
     setCurrentPrice(initialCandles[initialCandles.length - 1].close);
 
     addLog("system", `Strategy loaded. Base price: $${config.basePrice}, Grid distance: ${config.gridDistance}`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetGridSlots, addLog]);
+  }, [resetGridSlots, addLog, computeBollingerBands, initialCapital]);
 
   // --- Select Direction (Long/Short) ---
   const selectDirection = useCallback((dir: "long" | "short") => {
@@ -925,5 +992,7 @@ export function useMartingale() {
     runPresetScenario,
     loadStrategy,
     currentStrategyId,
+    positionSizeWeights,
+    setFibonacciWeightsLength,
   };
 }

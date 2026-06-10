@@ -23,7 +23,6 @@ export default function ControlPanel({
   currentPrice,
   id,
 }: ControlPanelProps) {
-
   return (
     <div id={id} className="glass-panel p-5 flex flex-col gap-5">
       <div className="border-b border-white/5 pb-3">

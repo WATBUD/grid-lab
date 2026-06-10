@@ -120,6 +120,8 @@ export default function Home() {
             averagePrice={strategy.averagePrice}
             id="matrix-ledger"
             strategyId={strategy.currentStrategyId}
+            positionSizeWeightsLength={strategy.positionSizeWeights.length}
+            setFibonacciWeightsLength={strategy.setFibonacciWeightsLength}
           />
         </section>
 
