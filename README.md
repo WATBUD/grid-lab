@@ -1,5 +1,11 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Live Demo
+
+The latest version is automatically deployed to Vercel:
+
+**[Open Grid Lab](https://grid-lab-phi.vercel.app/)**
+
 ## Getting Started
 
 First, run the development server:
