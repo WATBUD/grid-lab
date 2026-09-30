@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { useMartingale } from "@/hooks/useMartingale";
 import { STRATEGY_OPTIONS, StrategyId } from "@/app/constants/strategyConfigs";
 import GridMatrixTable from "./components/GridMatrixTable";
-import ControlPanel from "./components/ControlPanel";
 
 export default function Home() {
   const strategy = useMartingale();
@@ -70,7 +69,7 @@ export default function Home() {
                 </svg>
               </button>
             </div>
-            <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 px-3 py-2 sm:py-1.5 rounded-lg shrink-0">
+            <div className="flex h-10 items-center gap-2 bg-cyan-500/10 border border-cyan-500/30 px-3 rounded-lg shrink-0">
               <span className="text-[10px] sm:text-[10px] text-cyan-300 font-medium">Equity:</span>
               {isEditingEquity ? (
                 <input
@@ -105,6 +104,30 @@ export default function Home() {
                 </span>
               )}
             </div>
+            <button
+              type="button"
+              onClick={() => strategy.selectDirection(strategy.direction === "long" ? "short" : "long")}
+              className={`group inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-bold transition-all active:scale-95 ${
+                strategy.direction === "long"
+                  ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                  : "border-rose-500/35 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+              }`}
+              aria-label={`目前方向：${strategy.direction === "long" ? "做多" : "做空"}，点击切换`}
+              title={`切换为${strategy.direction === "long" ? "做空" : "做多"}`}
+            >
+              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-current/10">
+                <svg
+                  viewBox="0 0 20 20"
+                  className={`h-4 w-4 transition-transform duration-300 ${strategy.direction === "long" ? "" : "rotate-180"}`}
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <path d="M4 14 9 9l3 3 4-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M12.5 6H16v3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
+              <span>{strategy.direction === "long" ? "多" : "空"}</span>
+            </button>
           </div>
         </div>
       </header>
@@ -122,21 +145,12 @@ export default function Home() {
             strategyId={strategy.currentStrategyId}
             positionSizeWeightsLength={strategy.positionSizeWeights.length}
             setFibonacciWeightsLength={strategy.setFibonacciWeightsLength}
-          />
-        </section>
-
-        {/* B. Control Panel */}
-        <section aria-labelledby="control-panel" id="control-panel-section">
-          <h2 className="sr-only" id="control-panel">Control Panel</h2>
-          <ControlPanel
+            fibonacciBaseAmount={strategy.fibonacciBaseAmount}
+            setFibonacciBaseAmount={strategy.setFibonacciBaseAmount}
             basePrice={strategy.basePrice}
             setBasePrice={strategy.setBasePrice}
             gridDistance={strategy.gridDistance}
             setGridDistance={strategy.setGridDistance}
-            direction={strategy.direction}
-            selectDirection={strategy.selectDirection}
-            currentPrice={strategy.currentPrice}
-            id="control-console"
           />
         </section>
 

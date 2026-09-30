@@ -81,6 +81,18 @@ body {
   letter-spacing: -0.03em;
 }
 
+/* Hide inconsistent browser number spinners; custom controls are rendered beside inputs. */
+.number-input-clean {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.number-input-clean::-webkit-inner-spin-button,
+.number-input-clean::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
 /* Trading Grid Layout */
 .dashboard-grid {
   display: grid;

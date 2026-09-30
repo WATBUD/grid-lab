@@ -3,11 +3,13 @@
 import { useState, useEffect, useCallback, useRef, startTransition } from "react";
 import { STRATEGY_CONFIGS, StrategyId } from "@/app/constants/strategyConfigs";
 
-const DEFAULT_STRATEGY_ID = Object.keys(STRATEGY_CONFIGS)[0] as keyof typeof STRATEGY_CONFIGS;
+const DEFAULT_STRATEGY_ID = StrategyId.FIBONACCI;
 const DEFAULT_STRATEGY_CONFIG = STRATEGY_CONFIGS[DEFAULT_STRATEGY_ID];
 const DEFAULT_INITIAL_CAPITAL = 3125.0;
 const DEFAULT_LEVERAGE = 10;
-const DEFAULT_DIRECTION: "long" | "short" = "short";
+const DEFAULT_DIRECTION: "long" | "short" = "long";
+const DEFAULT_FIBONACCI_BASE_AMOUNT = 31.25;
+const LOCAL_SETTINGS_KEY = "quantlab-settings-v1";
 
 const getStrategyWeights = (strategyId: keyof typeof STRATEGY_CONFIGS): number[] => [
   ...STRATEGY_CONFIGS[strategyId].positionSizeWeights,
@@ -33,6 +35,7 @@ export interface SlotOrder {
   slot: number;
   triggerPrice: number;
   sizePercent: number;
+  sizeMultiplier: number;
   sizeUsd: number;
   sizeEth: number;
   status: "pending" | "filled" | "cancelled";
@@ -77,7 +80,8 @@ const createGridSlots = (
   gridDistance: number,
   direction: "long" | "short",
   initialCapital: number,
-  leverage: number
+  leverage: number,
+  fibonacciBaseAmount: number,
 ): SlotOrder[] => {
   const safeWeights = positionSizeWeights.filter((weight) => Number.isFinite(weight) && weight > 0);
   const totalWeight = safeWeights.reduce((a: number, b: number) => a + b, 0);
@@ -86,16 +90,22 @@ const createGridSlots = (
     : safeWeights.map((w: number) => w / totalWeight);
 
   return matrixPercent.map((pct: number, idx: number) => {
+    const distanceMultiplier = strategyId === StrategyId.FIBONACCI
+      ? safeWeights.slice(1, idx + 1).reduce((sum, weight) => sum + weight, 0)
+      : idx;
     const trigger = direction === "long"
-      ? basePrice - gridDistance * idx
-      : basePrice + gridDistance * idx;
-    const sizeUsd = initialCapital * pct;
+      ? basePrice - gridDistance * distanceMultiplier
+      : basePrice + gridDistance * distanceMultiplier;
+    const sizeUsd = strategyId === StrategyId.FIBONACCI
+      ? safeWeights[idx] * fibonacciBaseAmount
+      : initialCapital * pct;
     const sizeEth = (sizeUsd * leverage) / Math.abs(trigger);
 
     return {
       slot: idx + 1,
       triggerPrice: parseFloat(trigger.toFixed(2)),
       sizePercent: pct * 100,
+      sizeMultiplier: safeWeights[idx],
       sizeUsd: parseFloat(sizeUsd.toFixed(2)),
       sizeEth: parseFloat(sizeEth.toFixed(6)),
       status: "pending",
@@ -107,41 +117,16 @@ export function useMartingale() {
   // --- Strategy Constants (Configurable in Settings) ---
   const [initialCapital, setInitialCapital] = useState<number>(DEFAULT_INITIAL_CAPITAL);
   const [leverage, setLeverage] = useState<number>(DEFAULT_LEVERAGE);
+  const [fibonacciBaseAmount, setFibonacciBaseAmount] = useState<number>(DEFAULT_FIBONACCI_BASE_AMOUNT);
   const [basePrice, setBasePrice] = useState<number>(DEFAULT_STRATEGY_CONFIG.basePrice);
   const [gridDistance, setGridDistance] = useState<number>(DEFAULT_STRATEGY_CONFIG.gridDistance);
   const [positionSizeWeights, setPositionSizeWeights] = useState<number[]>(() => getStrategyWeights(DEFAULT_STRATEGY_ID));
   const [balance, setBalance] = useState(DEFAULT_INITIAL_CAPITAL); // Capital available
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   const setFibonacciWeightsLength = useCallback((length: number) => {
     setPositionSizeWeights(createFibonacciWeights(length));
   }, []);
-
-  // Sync from localStorage after hydration
-  useEffect(() => {
-    const savedCapital = localStorage.getItem("initialCapital");
-    const savedGridDistance = localStorage.getItem("gridDistance");
-    
-    startTransition(() => {
-      if (savedCapital) {
-        const parsedCapital = parseFloat(savedCapital);
-        setInitialCapital(parsedCapital);
-        setBalance(parsedCapital);
-      }
-      if (savedGridDistance) {
-        setGridDistance(parseFloat(savedGridDistance));
-      }
-    });
-  }, []);
-
-  // Persist gridDistance changes
-  useEffect(() => {
-    localStorage.setItem("gridDistance", gridDistance.toString());
-  }, [gridDistance]);
-
-  // Persist initialCapital changes
-  useEffect(() => {
-    localStorage.setItem("initialCapital", initialCapital.toString());
-  }, [initialCapital]);
 
   const [totalSlots] = useState(0);
   const [currentStrategyId, setCurrentStrategyId] = useState<StrategyId>(DEFAULT_STRATEGY_ID);
@@ -166,7 +151,8 @@ export function useMartingale() {
       DEFAULT_STRATEGY_CONFIG.gridDistance,
       DEFAULT_DIRECTION,
       DEFAULT_INITIAL_CAPITAL,
-      DEFAULT_LEVERAGE
+      DEFAULT_LEVERAGE,
+      DEFAULT_FIBONACCI_BASE_AMOUNT,
     )
   );
 
@@ -176,6 +162,75 @@ export function useMartingale() {
 
   // --- Direction State ---
   const [direction, setDirection] = useState<"long" | "short">(DEFAULT_DIRECTION);
+
+  // Restore every user-configurable setting after hydration.
+  useEffect(() => {
+    try {
+      const storedSettings = localStorage.getItem(LOCAL_SETTINGS_KEY);
+      const saved = storedSettings ? JSON.parse(storedSettings) as Record<string, unknown> : {};
+      const legacyCapital = Number(localStorage.getItem("initialCapital"));
+      const legacyGridDistance = Number(localStorage.getItem("gridDistance"));
+      const savedStrategyId: keyof typeof STRATEGY_CONFIGS = typeof saved.currentStrategyId === "string"
+        && saved.currentStrategyId in STRATEGY_CONFIGS
+        ? saved.currentStrategyId as keyof typeof STRATEGY_CONFIGS
+        : DEFAULT_STRATEGY_ID;
+      const savedCapital = typeof saved.initialCapital === "number" && saved.initialCapital > 0
+        ? saved.initialCapital
+        : legacyCapital > 0 ? legacyCapital : DEFAULT_INITIAL_CAPITAL;
+      const savedGridDistance = typeof saved.gridDistance === "number" && saved.gridDistance > 0
+        ? saved.gridDistance
+        : legacyGridDistance > 0 ? legacyGridDistance : STRATEGY_CONFIGS[savedStrategyId].gridDistance;
+      const savedWeights = Array.isArray(saved.positionSizeWeights)
+        && saved.positionSizeWeights.every((weight) => typeof weight === "number" && Number.isFinite(weight) && weight > 0)
+        ? saved.positionSizeWeights as number[]
+        : getStrategyWeights(savedStrategyId);
+
+      startTransition(() => {
+        setCurrentStrategyId(savedStrategyId);
+        setInitialCapital(savedCapital);
+        setBalance(savedCapital);
+        setLeverage(typeof saved.leverage === "number" && saved.leverage > 0 ? saved.leverage : DEFAULT_LEVERAGE);
+        setFibonacciBaseAmount(typeof saved.fibonacciBaseAmount === "number" && saved.fibonacciBaseAmount > 0
+          ? saved.fibonacciBaseAmount
+          : DEFAULT_FIBONACCI_BASE_AMOUNT);
+        setBasePrice(typeof saved.basePrice === "number" && saved.basePrice > 0
+          ? saved.basePrice
+          : STRATEGY_CONFIGS[savedStrategyId].basePrice);
+        setGridDistance(savedGridDistance);
+        setPositionSizeWeights(savedWeights);
+        setDirection(saved.direction === "short" ? "short" : DEFAULT_DIRECTION);
+        setSettingsLoaded(true);
+      });
+    } catch {
+      startTransition(() => setSettingsLoaded(true));
+    }
+  }, []);
+
+  // Save every user-configurable setting locally after restoration is complete.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+
+    localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify({
+      currentStrategyId,
+      initialCapital,
+      leverage,
+      fibonacciBaseAmount,
+      basePrice,
+      gridDistance,
+      positionSizeWeights,
+      direction,
+    }));
+  }, [
+    settingsLoaded,
+    currentStrategyId,
+    initialCapital,
+    leverage,
+    fibonacciBaseAmount,
+    basePrice,
+    gridDistance,
+    positionSizeWeights,
+    direction,
+  ]);
 
   // --- Interactive Simulation States ---
   const [currentPrice, setCurrentPrice] = useState(2125.0);
@@ -296,17 +351,17 @@ export function useMartingale() {
   }, []);
 
   // --- Initialize Grid Matrix ---
-  const resetGridSlots = useCallback((customBasePrice: number = basePrice, customGridDistance: number = gridDistance, dir: "long" | "short" = direction, strategyIdParam: StrategyId = currentStrategyId, customInitialCapital: number = initialCapital, customPositionSizeWeights: number[] = positionSizeWeights) => {
+  const resetGridSlots = useCallback((customBasePrice: number = basePrice, customGridDistance: number = gridDistance, dir: "long" | "short" = direction, strategyIdParam: StrategyId = currentStrategyId, customInitialCapital: number = initialCapital, customPositionSizeWeights: number[] = positionSizeWeights, customFibonacciBaseAmount: number = fibonacciBaseAmount) => {
     // If no strategy selected, return empty slots
     if (strategyIdParam === StrategyId.NONE) {
       setSlots([]);
       return [];
     }
 
-    const initialSlots = createGridSlots(strategyIdParam, customPositionSizeWeights, customBasePrice, customGridDistance, dir, customInitialCapital, leverage);
+    const initialSlots = createGridSlots(strategyIdParam, customPositionSizeWeights, customBasePrice, customGridDistance, dir, customInitialCapital, leverage, customFibonacciBaseAmount);
     setSlots(initialSlots);
     return initialSlots;
-  }, [basePrice, gridDistance, initialCapital, leverage, direction, currentStrategyId, positionSizeWeights]);
+  }, [basePrice, gridDistance, initialCapital, leverage, direction, currentStrategyId, positionSizeWeights, fibonacciBaseAmount]);
 
   // Initial setup
   useEffect(() => {
@@ -322,7 +377,7 @@ export function useMartingale() {
         resetGridSlots(basePrice, gridDistance, direction, currentStrategyId, initialCapital, positionSizeWeights);
       });
     }
-  }, [initialCapital, currentStrategyId, basePrice, gridDistance, direction, resetGridSlots, positionSizeWeights]);
+  }, [initialCapital, currentStrategyId, basePrice, gridDistance, direction, resetGridSlots, positionSizeWeights, fibonacciBaseAmount]);
 
   // --- Reset Entire Strategy Position & State ---
   const resetStrategy = useCallback((newBalance: number = balance, exitType?: "TP" | "SL", pnlAmt: number = 0) => {
@@ -399,10 +454,10 @@ export function useMartingale() {
     setBasePrice(config.basePrice);
     setGridDistance(config.gridDistance);
     setBalance(retainedCapital);
-    setDirection("short");
+    setDirection(DEFAULT_DIRECTION);
 
     // Reset grid with new configuration
-    resetGridSlots(config.basePrice, config.gridDistance, "short", strategyId, retainedCapital, getStrategyWeights(strategyId));
+    resetGridSlots(config.basePrice, config.gridDistance, DEFAULT_DIRECTION, strategyId, retainedCapital, getStrategyWeights(strategyId));
 
     // Regenerate candles with new base price
     const initialCandles: Candle[] = [];
@@ -994,5 +1049,7 @@ export function useMartingale() {
     currentStrategyId,
     positionSizeWeights,
     setFibonacciWeightsLength,
+    fibonacciBaseAmount,
+    setFibonacciBaseAmount,
   };
 }
