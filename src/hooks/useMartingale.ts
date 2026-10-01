@@ -90,9 +90,8 @@ const createGridSlots = (
     : safeWeights.map((w: number) => w / totalWeight);
 
   return matrixPercent.map((pct: number, idx: number) => {
-    const distanceMultiplier = strategyId === StrategyId.FIBONACCI
-      ? safeWeights.slice(1, idx + 1).reduce((sum, weight) => sum + weight, 0)
-      : idx;
+    const round = idx + 1;
+    const distanceMultiplier = (round * (round + 1)) / 2;
     const trigger = direction === "long"
       ? basePrice - gridDistance * distanceMultiplier
       : basePrice + gridDistance * distanceMultiplier;

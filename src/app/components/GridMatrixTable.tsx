@@ -36,9 +36,21 @@ function NumberStepper({
   ariaLabel,
   compact = false,
 }: NumberStepperProps) {
+  const [draftValue, setDraftValue] = React.useState(String(value));
+  const isEditingRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!isEditingRef.current) {
+      // Keep the field in sync when another control changes the value.
+      setDraftValue(String(value));
+    }
+  }, [value]);
+
   const updateValue = (nextValue: number) => {
     const precision = step.toString().split(".")[1]?.length ?? 0;
-    onChange(Number(Math.max(min, nextValue).toFixed(precision)));
+    const normalizedValue = Number(Math.max(min, nextValue).toFixed(precision));
+    setDraftValue(String(normalizedValue));
+    onChange(normalizedValue);
   };
 
   return (
@@ -47,10 +59,29 @@ function NumberStepper({
         type="number"
         min={min}
         step={step}
-        value={value}
+        value={draftValue}
+        onFocus={() => {
+          isEditingRef.current = true;
+        }}
         onChange={(event) => {
-          const nextValue = Number(event.target.value);
+          const nextDraftValue = event.target.value;
+          setDraftValue(nextDraftValue);
+
+          if (nextDraftValue === "") return;
+
+          const nextValue = Number(nextDraftValue);
           if (Number.isFinite(nextValue) && nextValue >= min) onChange(nextValue);
+        }}
+        onBlur={() => {
+          isEditingRef.current = false;
+          const nextValue = Number(draftValue);
+
+          if (draftValue === "" || !Number.isFinite(nextValue) || nextValue < min) {
+            setDraftValue(String(value));
+            return;
+          }
+
+          updateValue(nextValue);
         }}
         className="number-input-clean min-w-0 flex-1 bg-transparent px-3 py-2 text-right text-sm font-bold text-white outline-none mono-text"
         aria-label={ariaLabel}
@@ -163,13 +194,13 @@ export default function GridMatrixTable({
         {canSetFibonacciBase && (
           <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2.5">
             <span className="min-w-max text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              N (USD)
+              Unit Size
             </span>
             <NumberStepper
               value={fibonacciBaseAmount}
               onChange={setFibonacciBaseAmount}
               step={0.01}
-              ariaLabel="Fibonacci base amount N in USD"
+              ariaLabel="Fibonacci unit size"
             />
           </div>
         )}
@@ -186,13 +217,13 @@ export default function GridMatrixTable({
         </div>
         <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2.5">
           <span className="min-w-max text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-            Grid Distance (USD)
+            Price Step
           </span>
           <NumberStepper
             value={gridDistance}
             onChange={setGridDistance}
             step={0.5}
-            ariaLabel="Grid distance in USD"
+            ariaLabel="Price step"
           />
         </div>
       </div>
@@ -202,7 +233,7 @@ export default function GridMatrixTable({
           <thead>
             <tr className="text-slate-200 border-b border-white/5 pb-2">
               <th className="pb-3 font-bold w-12 pl-3">#</th>
-              <th className="pb-3 font-bold px-4">Trigger Price</th>
+              <th className="pb-3 font-bold px-4">Entry Price</th>
               <th className="pb-3 font-bold text-right px-4 w-36">
                 {strategyId === StrategyId.FIBONACCI
                   ? `Fibonacci (${totalMultiplier}N)`
