@@ -54,7 +54,7 @@ function NumberStepper({
   };
 
   return (
-    <div className={`flex items-stretch overflow-hidden rounded-lg border border-white/10 bg-slate-900/70 transition-colors focus-within:border-cyan-500/50 ${compact ? "w-32" : "min-w-0 flex-1"}`}>
+    <div className={`flex h-10 items-stretch overflow-hidden rounded-lg border border-white/10 bg-slate-900/70 transition-colors focus-within:border-cyan-500/50 ${compact ? "w-32" : "min-w-0 flex-1"}`}>
       <input
         type="number"
         min={min}
@@ -148,6 +148,19 @@ export default function GridMatrixTable({
     style: "currency",
     currency: "USD",
   }).format(totalMargin);
+  const priceStepPercent = basePrice > 0
+    ? (gridDistance / basePrice) * 100
+    : 0;
+
+  const updateBasePrice = (nextBasePrice: number) => {
+    const currentStepPercent = basePrice > 0 ? gridDistance / basePrice : 0;
+    setBasePrice(nextBasePrice);
+    setGridDistance(Number((nextBasePrice * currentStepPercent).toFixed(8)));
+  };
+
+  const updatePriceStepPercent = (nextPercent: number) => {
+    setGridDistance(Number(((basePrice * nextPercent) / 100).toFixed(8)));
+  };
 
   return (
     <div id={id} className="glass-panel p-5 flex flex-col gap-4">
@@ -193,7 +206,7 @@ export default function GridMatrixTable({
       <div className={`grid gap-2 border-b border-white/5 pb-4 ${canSetFibonacciBase ? "md:grid-cols-[0.85fr_0.85fr_1.3fr]" : "md:grid-cols-2"}`}>
         {canSetFibonacciBase && (
           <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2.5">
-            <span className="min-w-max text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            <span className="inline-flex h-10 min-w-max items-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Unit Size
             </span>
             <NumberStepper
@@ -205,26 +218,32 @@ export default function GridMatrixTable({
           </div>
         )}
         <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2.5">
-          <span className="min-w-max text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          <span className="inline-flex h-10 min-w-max items-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">
             Base Price
           </span>
           <NumberStepper
             value={basePrice}
-            onChange={setBasePrice}
+            onChange={updateBasePrice}
             step={0.1}
             ariaLabel="Base price"
           />
         </div>
         <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2.5">
-          <span className="min-w-max text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-            Price Step
+          <span className="inline-flex h-10 min-w-max items-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Step %
           </span>
           <NumberStepper
-            value={gridDistance}
-            onChange={setGridDistance}
-            step={0.5}
-            ariaLabel="Price step"
+            value={Number(priceStepPercent.toFixed(4))}
+            onChange={updatePriceStepPercent}
+            step={0.1}
+            ariaLabel="Price step percentage"
           />
+          <span
+            className="inline-flex h-10 min-w-max items-center rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 text-[11px] font-bold text-cyan-300 mono-text"
+            title="Calculated price step"
+          >
+            Step {gridDistance.toFixed(2)}
+          </span>
         </div>
       </div>
 
