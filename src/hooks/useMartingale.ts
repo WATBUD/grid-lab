@@ -90,8 +90,10 @@ const createGridSlots = (
     : safeWeights.map((w: number) => w / totalWeight);
 
   return matrixPercent.map((pct: number, idx: number) => {
-    const round = idx + 1;
-    const distanceMultiplier = (round * (round + 1)) / 2;
+    // The base price is the first entry. Each later entry moves from the
+    // previous price by an additional round of the configured step.
+    const completedRounds = idx;
+    const distanceMultiplier = (completedRounds * (completedRounds + 1)) / 2;
     const trigger = direction === "long"
       ? basePrice - gridDistance * distanceMultiplier
       : basePrice + gridDistance * distanceMultiplier;
@@ -102,7 +104,7 @@ const createGridSlots = (
 
     return {
       slot: idx + 1,
-      triggerPrice: parseFloat(trigger.toFixed(2)),
+      triggerPrice: parseFloat(trigger.toFixed(8)),
       sizePercent: pct * 100,
       sizeMultiplier: safeWeights[idx],
       sizeUsd: parseFloat(sizeUsd.toFixed(2)),

@@ -6,7 +6,6 @@ import { StrategyId } from "@/app/constants/strategyConfigs";
 
 interface GridMatrixTableProps {
   slots: SlotOrder[];
-  averagePrice: number;
   id?: string;
   strategyId?: StrategyId;
   positionSizeWeightsLength?: number;
@@ -26,6 +25,7 @@ interface NumberStepperProps {
   min?: number;
   ariaLabel: string;
   compact?: boolean;
+  displayPrecision?: number;
 }
 
 function NumberStepper({
@@ -35,21 +35,28 @@ function NumberStepper({
   min = 0.01,
   ariaLabel,
   compact = false,
+  displayPrecision,
 }: NumberStepperProps) {
-  const [draftValue, setDraftValue] = React.useState(String(value));
+  const formatValue = React.useCallback(
+    (nextValue: number) => displayPrecision === undefined
+      ? String(nextValue)
+      : nextValue.toFixed(displayPrecision),
+    [displayPrecision],
+  );
+  const [draftValue, setDraftValue] = React.useState(() => formatValue(value));
   const isEditingRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!isEditingRef.current) {
       // Keep the field in sync when another control changes the value.
-      setDraftValue(String(value));
+      setDraftValue(formatValue(value));
     }
-  }, [value]);
+  }, [value, formatValue]);
 
   const updateValue = (nextValue: number) => {
     const precision = step.toString().split(".")[1]?.length ?? 0;
     const normalizedValue = Number(Math.max(min, nextValue).toFixed(precision));
-    setDraftValue(String(normalizedValue));
+    setDraftValue(formatValue(normalizedValue));
     onChange(normalizedValue);
   };
 
@@ -77,11 +84,12 @@ function NumberStepper({
           const nextValue = Number(draftValue);
 
           if (draftValue === "" || !Number.isFinite(nextValue) || nextValue < min) {
-            setDraftValue(String(value));
+            setDraftValue(formatValue(value));
             return;
           }
 
-          updateValue(nextValue);
+          setDraftValue(formatValue(nextValue));
+          onChange(nextValue);
         }}
         className="number-input-clean min-w-0 flex-1 bg-transparent px-3 py-2 text-right text-sm font-bold text-white outline-none mono-text"
         aria-label={ariaLabel}
@@ -114,7 +122,6 @@ function NumberStepper({
 
 export default function GridMatrixTable({
   slots,
-  averagePrice,
   id,
   strategyId,
   positionSizeWeightsLength,
@@ -144,6 +151,15 @@ export default function GridMatrixTable({
     (total, slot) => total + slot.sizeUsd,
     0,
   );
+  const totalPositionUnits = slots.reduce(
+    (total, slot) => slot.triggerPrice > 0
+      ? total + slot.sizeUsd / slot.triggerPrice
+      : total,
+    0,
+  );
+  const averageEntryPrice = totalPositionUnits > 0
+    ? totalMargin / totalPositionUnits
+    : 0;
   const formattedTotalMargin = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
@@ -195,9 +211,17 @@ export default function GridMatrixTable({
           )}
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {averagePrice > 0 && (
-            <span className="text-[10px] bg-amber-500/10 border border-amber-500/30 text-amber-400 px-2 py-0.5 rounded-full mono-text">
-              5-Slot Theoretical Avg: 2068.9
+          {averageEntryPrice > 0 && (
+            <span
+              className="inline-flex h-8 items-center gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 text-amber-300 mono-text"
+              title="Weighted average entry price for all configured slots"
+            >
+              <span className="text-[10px] font-semibold tracking-wider text-amber-200/70">
+                AVG ENTRY
+              </span>
+              <span className="text-sm font-bold">
+                ${averageEntryPrice.toFixed(4)}
+              </span>
             </span>
           )}
         </div>
@@ -224,7 +248,7 @@ export default function GridMatrixTable({
           <NumberStepper
             value={basePrice}
             onChange={updateBasePrice}
-            step={0.1}
+            step={0.0001}
             ariaLabel="Base price"
           />
         </div>
@@ -237,12 +261,13 @@ export default function GridMatrixTable({
             onChange={updatePriceStepPercent}
             step={0.1}
             ariaLabel="Price step percentage"
+            displayPrecision={1}
           />
           <span
             className="inline-flex h-10 min-w-max items-center rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 text-[11px] font-bold text-cyan-300 mono-text"
             title="Calculated price step"
           >
-            Step {gridDistance.toFixed(2)}
+            Step {gridDistance.toFixed(4)}
           </span>
         </div>
       </div>
@@ -275,8 +300,8 @@ export default function GridMatrixTable({
                       {s.slot}
                     </span>
                   </td>
-                  <td className="py-3.5 px-4 font-semibold mono-text text-white">
-                    ${s.triggerPrice.toFixed(2)}
+                  <td className="py-3.5 px-4 font-bold mono-text text-cyan-300 drop-shadow-[0_0_8px_rgba(34,211,238,0.22)]">
+                    ${s.triggerPrice.toFixed(4)}
                   </td>
                   <td className="py-3.5 text-right font-semibold mono-text text-slate-200 px-4 w-24">
                     {strategyId === StrategyId.FIBONACCI

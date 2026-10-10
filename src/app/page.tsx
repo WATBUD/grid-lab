@@ -140,7 +140,6 @@ export default function Home() {
           <h2 className="sr-only" id="grid-matrix">Grid Matrix</h2>
           <GridMatrixTable
             slots={strategy.slots}
-            averagePrice={strategy.averagePrice}
             id="matrix-ledger"
             strategyId={strategy.currentStrategyId}
             positionSizeWeightsLength={strategy.positionSizeWeights.length}
