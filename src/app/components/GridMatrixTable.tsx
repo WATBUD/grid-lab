@@ -7,6 +7,9 @@ import { MAX_PROGRESSIVE_SLOTS } from "@/app/constants/progressiveDca";
 
 interface GridMatrixTableProps {
   slots: SlotOrder[];
+  leverage: number;
+  setLeverage: (leverage: number) => void;
+  direction: "long" | "short";
   id?: string;
   strategyId?: StrategyId;
   positionSizeWeightsLength?: number;
@@ -123,6 +126,9 @@ function NumberStepper({
 
 export default function GridMatrixTable({
   slots,
+  leverage,
+  setLeverage,
+  direction,
   id,
   strategyId,
   positionSizeWeightsLength,
@@ -218,6 +224,17 @@ export default function GridMatrixTable({
               </button>
             </div>
           )}
+          <div className="flex items-center gap-2 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2">
+            <span className="text-[11px] font-semibold text-slate-400">槓桿 ×</span>
+            <NumberStepper
+              value={leverage}
+              onChange={setLeverage}
+              step={1}
+              min={1}
+              compact
+              ariaLabel="Leverage multiplier"
+            />
+          </div>
         </div>
       </div>
 
@@ -233,7 +250,8 @@ export default function GridMatrixTable({
       )}
       {!isProgressive && (
         <p className="text-xs leading-6 text-slate-400">
-          每次以加碼後的最新累積均價為基準，依 Step % 的 1、2、3…倍計算下一筆進場價。
+          Step % 為槓桿後的目標虧損幅度，依回合套用 1、2、3…倍；先除以槓桿，再以最新均價計算下一筆進場價。
+          「相對前次均價漲跌幅」顯示下一筆加碼前的估算合約損益，已乘槓桿倍數，未計費用與強平。
           {positionSizeWeightsLength !== undefined && slots.length < positionSizeWeightsLength && (
             <span className="text-amber-300"> 後續回合跌幅達 100%，已停止列出無效買進價格。</span>
           )}
@@ -277,9 +295,9 @@ export default function GridMatrixTable({
           />
           <span
             className="inline-flex h-10 min-w-max items-center rounded-lg border border-cyan-500/20 bg-cyan-500/10 px-3 text-[11px] font-bold text-cyan-300 mono-text"
-            title="首筆加碼價差；後續依最新累積均價與回合跌幅計算"
+            title="首筆加碼的實際價格距離，已將目標損益幅度除以槓桿；後續依最新均價計算"
           >
-            Step {gridDistance.toFixed(4)}
+            Step {(gridDistance / leverage).toFixed(4)}
           </span>
         </div>}
       </div>
@@ -293,7 +311,7 @@ export default function GridMatrixTable({
               {(strategyId === StrategyId.FIBONACCI || isPercent) && (
                 <>
                   <th className="pb-3 px-4 text-right whitespace-nowrap" title="完成本列買進後的平均持有成本">加碼後均價</th>
-                  <th className="pb-3 px-4 text-right whitespace-nowrap" title="本次買進價格相較前一次加碼後累積均價的漲跌幅">相對前次均價漲跌幅</th>
+                  <th className="pb-3 px-4 text-right whitespace-nowrap" title={`相對前次均價的估算合約損益，已乘 ${leverage} 倍槓桿，未計費用與強平`}>相對前次均價漲跌幅</th>
                   <th className="pb-3 px-4 text-right whitespace-nowrap">相對原價漲跌幅</th>
                 </>
               )}
@@ -323,6 +341,9 @@ export default function GridMatrixTable({
               const priceChangePercent = basePrice > 0
                 ? ((s.triggerPrice - basePrice) / basePrice) * 100
                 : 0;
+              const contractReturnPercent = entryChangePercent === null
+                ? null
+                : entryChangePercent * leverage * (direction === "long" ? 1 : -1);
               return (
                 <tr
                   key={s.slot}
@@ -341,8 +362,8 @@ export default function GridMatrixTable({
                     <td className="py-3.5 px-4 text-right font-bold mono-text text-amber-300">
                       {cumulativeAverages[index] === null ? "—" : `$${cumulativeAverages[index].toFixed(4)}`}
                     </td>
-                    <td className={`py-3.5 px-4 text-right font-semibold mono-text ${entryChangePercent === null ? "text-slate-400" : entryChangePercent < 0 ? "text-rose-300" : entryChangePercent > 0 ? "text-emerald-300" : "text-slate-400"}`}>
-                      {entryChangePercent === null ? "—" : `${entryChangePercent > 0 ? "+" : ""}${entryChangePercent.toFixed(2)}%`}
+                    <td className={`py-3.5 px-4 text-right font-bold mono-text ${contractReturnPercent === null ? "text-slate-400" : contractReturnPercent < 0 ? "text-rose-300" : "text-emerald-300"}`}>
+                      {contractReturnPercent === null ? "—" : `${contractReturnPercent > 0 ? "+" : ""}${contractReturnPercent.toFixed(2)}%`}
                     </td>
                     <td className={`py-3.5 px-4 text-right font-semibold mono-text ${priceChangePercent < 0 ? "text-rose-300" : priceChangePercent > 0 ? "text-emerald-300" : "text-slate-400"}`}>
                       {priceChangePercent > 0 ? "+" : ""}{priceChangePercent.toFixed(2)}%

@@ -7,9 +7,9 @@ import { createProgressiveDca, MAX_PROGRESSIVE_SLOTS } from "@/app/constants/pro
 const DEFAULT_STRATEGY_ID = StrategyId.FIBONACCI;
 const DEFAULT_STRATEGY_CONFIG = STRATEGY_CONFIGS[DEFAULT_STRATEGY_ID];
 const DEFAULT_INITIAL_CAPITAL = 3125.0;
-const DEFAULT_LEVERAGE = 10;
+const DEFAULT_LEVERAGE = 6;
 const DEFAULT_DIRECTION: "long" | "short" = "long";
-const DEFAULT_FIBONACCI_BASE_AMOUNT = 31.25;
+const DEFAULT_FIBONACCI_BASE_AMOUNT = 26;
 const LOCAL_SETTINGS_KEY = "quantlab-settings-v1";
 
 const getStrategyWeights = (strategyId: keyof typeof STRATEGY_CONFIGS): number[] => [
@@ -106,7 +106,7 @@ const createGridSlots = (
   let cumulativeInvestment = 0;
   let cumulativeQuantity = 0;
   let cumulativeAverage = basePrice;
-  const stepRate = gridDistance / basePrice;
+  const stepRate = gridDistance / basePrice / leverage;
   for (let idx = 0; idx < matrixPercent.length; idx++) {
     const pct = matrixPercent[idx];
     const roundRate = stepRate * idx;

@@ -20,9 +20,9 @@ export const STRATEGY_CONFIGS = {
   },
   [StrategyId.FIBONACCI]: {
     name: "Fibonacci Strategy（加碼金額）",
-    basePrice: 100,
-    gridDistance: 10,
-    positionSizeWeights: [1, 1, 2, 3, 5, 8, 13, 21, 34],
+    basePrice: 382,
+    gridDistance: 45.84,
+    positionSizeWeights: [1, 1, 2, 3, 5, 8, 13],
   },
 } as const;
 

@@ -141,6 +141,9 @@ export default function Home() {
           <h2 className="sr-only" id="grid-matrix">Grid Matrix</h2>
           <GridMatrixTable
             slots={strategy.slots}
+            leverage={strategy.leverage}
+            setLeverage={strategy.setLeverage}
+            direction={strategy.direction}
             id="matrix-ledger"
             strategyId={strategy.currentStrategyId}
             positionSizeWeightsLength={strategy.positionSizeWeights.length}
