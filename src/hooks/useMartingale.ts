@@ -90,7 +90,6 @@ const createGridSlots = (
   fibonacciBaseAmount: number,
 ): SlotOrder[] => {
   const safeWeights = positionSizeWeights.filter((weight) => Number.isFinite(weight) && weight > 0);
-  const totalWeight = safeWeights.reduce((a: number, b: number) => a + b, 0);
   if (strategyId === StrategyId.FIBONACCI_PROGRESSIVE) {
     return createProgressiveDca(safeWeights, basePrice, fibonacciBaseAmount).map((stage, idx) => ({
       ...stage,
@@ -101,33 +100,43 @@ const createGridSlots = (
       status: "pending" as const,
     }));
   }
-  const matrixPercent = strategyId === StrategyId.FIBONACCI
-    ? safeWeights.map((w: number) => w / 100)
-    : safeWeights.map((w: number) => w / totalWeight);
+  const matrixPercent = safeWeights.map((w: number) => w / 100);
 
-  return matrixPercent.map((pct: number, idx: number) => {
-    // The base price is the first entry. Each later entry moves from the
-    // previous price by an additional round of the configured step.
-    const completedRounds = idx;
-    const distanceMultiplier = (completedRounds * (completedRounds + 1)) / 2;
-    const trigger = direction === "long"
-      ? basePrice - gridDistance * distanceMultiplier
-      : basePrice + gridDistance * distanceMultiplier;
+  const result: SlotOrder[] = [];
+  let cumulativeInvestment = 0;
+  let cumulativeQuantity = 0;
+  let cumulativeAverage = basePrice;
+  const stepRate = gridDistance / basePrice;
+  for (let idx = 0; idx < matrixPercent.length; idx++) {
+    const pct = matrixPercent[idx];
+    const roundRate = stepRate * idx;
+    const trigger = idx === 0 ? basePrice : cumulativeAverage * (
+      direction === "long" ? 1 - roundRate : 1 + roundRate
+    );
+    // A drawdown of 100% or more cannot produce a valid buy price.
+    if (!Number.isFinite(trigger) || trigger <= 0) break;
     const sizeUsd = strategyId === StrategyId.FIBONACCI
       ? safeWeights[idx] * fibonacciBaseAmount
       : initialCapital * pct;
     const sizeEth = (sizeUsd * leverage) / Math.abs(trigger);
+    cumulativeInvestment += sizeUsd;
+    cumulativeQuantity += sizeUsd / trigger;
+    cumulativeAverage = cumulativeInvestment / cumulativeQuantity;
 
-    return {
+    result.push({
       slot: idx + 1,
-      triggerPrice: parseFloat(trigger.toFixed(8)),
+      triggerPrice: trigger,
+      cumulativeAverage,
+      cumulativeInvestment,
+      cumulativeQuantity,
       sizePercent: pct * 100,
       sizeMultiplier: safeWeights[idx],
       sizeUsd: parseFloat(sizeUsd.toFixed(2)),
       sizeEth: parseFloat(sizeEth.toFixed(6)),
       status: "pending",
-    };
-  });
+    });
+  }
+  return result;
 };
 
 export function useMartingale() {
@@ -141,12 +150,14 @@ export function useMartingale() {
   const [balance, setBalance] = useState(DEFAULT_INITIAL_CAPITAL); // Capital available
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-  const setFibonacciWeightsLength = useCallback((length: number) => {
-    setPositionSizeWeights(createFibonacciWeights(length));
-  }, []);
-
   const [totalSlots] = useState(0);
   const [currentStrategyId, setCurrentStrategyId] = useState<StrategyId>(DEFAULT_STRATEGY_ID);
+  const setFibonacciWeightsLength = useCallback((length: number) => {
+    const count = Math.max(1, Math.floor(length));
+    setPositionSizeWeights(currentStrategyId === StrategyId.PESS
+      ? Array.from({ length: Math.min(count, 7) }, (_, index) => 2 ** index)
+      : createFibonacciWeights(count));
+  }, [currentStrategyId]);
 
   // --- Dynamic Account States ---
   const [realizedPnl, setRealizedPnl] = useState(0.0);
@@ -189,6 +200,7 @@ export function useMartingale() {
       const legacyGridDistance = Number(localStorage.getItem("gridDistance"));
       const savedStrategyId: keyof typeof STRATEGY_CONFIGS = typeof saved.currentStrategyId === "string"
         && saved.currentStrategyId in STRATEGY_CONFIGS
+        && saved.currentStrategyId !== StrategyId.FIBONACCI_PROGRESSIVE
         ? saved.currentStrategyId as keyof typeof STRATEGY_CONFIGS
         : DEFAULT_STRATEGY_ID;
       const savedCapital = typeof saved.initialCapital === "number" && saved.initialCapital > 0
@@ -197,7 +209,8 @@ export function useMartingale() {
       const savedGridDistance = typeof saved.gridDistance === "number" && saved.gridDistance > 0
         ? saved.gridDistance
         : legacyGridDistance > 0 ? legacyGridDistance : STRATEGY_CONFIGS[savedStrategyId].gridDistance;
-      const savedWeights = Array.isArray(saved.positionSizeWeights)
+      const savedWeights = saved.currentStrategyId === savedStrategyId
+        && Array.isArray(saved.positionSizeWeights)
         && saved.positionSizeWeights.every((weight) => typeof weight === "number" && Number.isFinite(weight) && weight > 0)
         ? saved.positionSizeWeights as number[]
         : getStrategyWeights(savedStrategyId);
@@ -214,7 +227,9 @@ export function useMartingale() {
           ? saved.basePrice
           : STRATEGY_CONFIGS[savedStrategyId].basePrice);
         setGridDistance(savedGridDistance);
-        setPositionSizeWeights(savedStrategyId === StrategyId.FIBONACCI_PROGRESSIVE
+        setPositionSizeWeights(savedStrategyId === StrategyId.PESS
+          ? Array.from({ length: Math.min(savedWeights.length || 6, 7) }, (_, index) => 2 ** index)
+          : savedStrategyId === StrategyId.FIBONACCI_PROGRESSIVE
           ? createFibonacciWeights(Math.min(savedWeights.length || 7, MAX_PROGRESSIVE_SLOTS))
           : savedWeights);
         setDirection(savedStrategyId !== StrategyId.FIBONACCI_PROGRESSIVE && saved.direction === "short" ? "short" : DEFAULT_DIRECTION);

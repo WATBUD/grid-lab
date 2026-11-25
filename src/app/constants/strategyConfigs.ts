@@ -3,7 +3,6 @@ export enum StrategyId {
   PESS = "Progressive Exposure Scaling Strategy (PESS)",
   FIBONACCI = "Fibonacci Strategy",
   FIBONACCI_PROGRESSIVE = "Fibonacci 16%-Base Progressive-Drawdown DCA",
-  DOUBLE_DOWN = "Double Down Strategy",
 }
 
 export const STRATEGY_CONFIGS = {
@@ -14,26 +13,23 @@ export const STRATEGY_CONFIGS = {
     positionSizeWeights: [1, 1, 2, 3, 5, 8, 13],
   },
   [StrategyId.PESS]: {
-    name: StrategyId.PESS,
+    name: "Fibonacci Strategy（加碼百分比）",
     basePrice: 100,
     gridDistance: 10,
-    positionSizeWeights: [1, 2, 4, 8, 12, 18, 25, 30],
+    positionSizeWeights: [1, 2, 4, 8, 16, 32],
   },
   [StrategyId.FIBONACCI]: {
-    name: StrategyId.FIBONACCI,
+    name: "Fibonacci Strategy（加碼金額）",
     basePrice: 100,
     gridDistance: 10,
     positionSizeWeights: [1, 1, 2, 3, 5, 8, 13, 21, 34],
   },
-    [StrategyId.DOUBLE_DOWN]: {
-    name: StrategyId.DOUBLE_DOWN,
-    basePrice: 100,
-    gridDistance: 10.0,
-    positionSizeWeights: [1, 2, 4, 8, 16, 32],
-  },
 } as const;
 
-export const STRATEGY_OPTIONS = Object.entries(STRATEGY_CONFIGS).map(([id, config]) => ({
+// Keep the retired configuration only for compatibility with older saved data.
+export const STRATEGY_OPTIONS = Object.entries(STRATEGY_CONFIGS)
+  .filter(([id]) => id !== StrategyId.FIBONACCI_PROGRESSIVE)
+  .map(([id, config]) => ({
   id: id as keyof typeof STRATEGY_CONFIGS,
   name: config.name,
 }));
