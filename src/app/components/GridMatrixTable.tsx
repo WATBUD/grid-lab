@@ -3,6 +3,7 @@
 import React from "react";
 import { SlotOrder } from "@/hooks/useMartingale";
 import { StrategyId } from "@/app/constants/strategyConfigs";
+import { MAX_PROGRESSIVE_SLOTS } from "@/app/constants/progressiveDca";
 
 interface GridMatrixTableProps {
   slots: SlotOrder[];
@@ -133,10 +134,12 @@ export default function GridMatrixTable({
   gridDistance,
   setGridDistance,
 }: GridMatrixTableProps) {
-  const canAdjustFibonacciLength = strategyId === StrategyId.FIBONACCI
+  const isProgressive = strategyId === StrategyId.FIBONACCI_PROGRESSIVE;
+  const isFibonacci = strategyId === StrategyId.FIBONACCI || isProgressive;
+  const canAdjustFibonacciLength = isFibonacci
     && positionSizeWeightsLength !== undefined
     && setFibonacciWeightsLength !== undefined;
-  const canSetFibonacciBase = strategyId === StrategyId.FIBONACCI
+  const canSetFibonacciBase = isFibonacci
     && fibonacciBaseAmount !== undefined
     && setFibonacciBaseAmount !== undefined;
   const totalWeightPercent = slots.reduce(
@@ -202,7 +205,8 @@ export default function GridMatrixTable({
               <button
                 type="button"
                 onClick={() => setFibonacciWeightsLength(positionSizeWeightsLength + 1)}
-                className="h-7 w-7 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-sm font-bold text-cyan-300 transition-colors hover:bg-cyan-500/20"
+                disabled={isProgressive && positionSizeWeightsLength >= MAX_PROGRESSIVE_SLOTS}
+                className="h-7 w-7 rounded-lg border border-cyan-500/30 bg-cyan-500/10 text-sm font-bold text-cyan-300 transition-colors hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-40"
                 title="Add Fibonacci slot"
               >
                 +
@@ -227,7 +231,12 @@ export default function GridMatrixTable({
         </div>
       </div>
 
-      <div className={`grid gap-2 border-b border-white/5 pb-4 ${canSetFibonacciBase ? "md:grid-cols-[0.85fr_0.85fr_1.3fr]" : "md:grid-cols-2"}`}>
+      {isProgressive && (
+        <p className="text-xs leading-6 text-slate-400">
+          以最新持有均價為基準：首次加碼下跌 16%，其後每次增加 8 個百分點（24%、32%…）。首列為初始買進，最多 12 筆；累積股數按投入金額 ÷ 買進價格計算。
+        </p>
+      )}
+      <div className={`grid gap-2 border-b border-white/5 pb-4 ${canSetFibonacciBase && !isProgressive ? "md:grid-cols-[0.85fr_0.85fr_1.3fr]" : "md:grid-cols-2"}`}>
         {canSetFibonacciBase && (
           <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2.5">
             <span className="inline-flex h-10 min-w-max items-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -252,7 +261,7 @@ export default function GridMatrixTable({
             ariaLabel="Base price"
           />
         </div>
-        <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2.5">
+        {!isProgressive && <div className="flex min-w-0 items-center gap-3 rounded-xl border border-white/8 bg-slate-950/40 px-3 py-2.5">
           <span className="inline-flex h-10 min-w-max items-center text-[11px] font-semibold uppercase tracking-wider text-slate-400">
             Step %
           </span>
@@ -269,7 +278,7 @@ export default function GridMatrixTable({
           >
             Step {gridDistance.toFixed(4)}
           </span>
-        </div>
+        </div>}
       </div>
 
       <div className="overflow-x-auto">
@@ -279,13 +288,20 @@ export default function GridMatrixTable({
               <th className="pb-3 font-bold w-12 pl-3">#</th>
               <th className="pb-3 font-bold px-4">Entry Price</th>
               <th className="pb-3 font-bold text-right px-4 w-36">
-                {strategyId === StrategyId.FIBONACCI
+                {isFibonacci
                   ? `Fibonacci (${totalMultiplier}N)`
                   : `Weight % (${totalWeightPercent.toFixed(2)}%)`}
               </th>
               <th className="pb-3 font-bold text-right px-4 pr-6">
                 Margin Size ({formattedTotalMargin})
               </th>
+              {isProgressive && <>
+                <th className="pb-3 px-4 text-right whitespace-nowrap">相對前次均價跌幅</th>
+                <th className="pb-3 px-4 text-right whitespace-nowrap">相比原價總跌幅</th>
+                <th className="pb-3 px-4 text-right whitespace-nowrap">加碼後均價</th>
+                <th className="pb-3 px-4 text-right whitespace-nowrap">累積投入</th>
+                <th className="pb-3 px-4 text-right whitespace-nowrap">累積股數</th>
+              </>}
             </tr>
           </thead>
           <tbody className="divide-y divide-white/5">
@@ -304,13 +320,20 @@ export default function GridMatrixTable({
                     ${s.triggerPrice.toFixed(4)}
                   </td>
                   <td className="py-3.5 text-right font-semibold mono-text text-slate-200 px-4 w-24">
-                    {strategyId === StrategyId.FIBONACCI
+                    {isFibonacci
                       ? `${s.sizeMultiplier}N`
                       : `${s.sizePercent.toFixed(2)}%`}
                   </td>
                   <td className="py-3.5 text-right font-semibold mono-text text-white px-4 pr-6">
                     ${s.sizeUsd.toFixed(2)}
                   </td>
+                  {isProgressive && <>
+                    <td className="py-3.5 px-4 text-right mono-text text-slate-300">{s.slot === 1 ? "—" : `-${s.drawdownPercent}%`}</td>
+                    <td className="py-3.5 px-4 text-right mono-text text-rose-300">{s.slot === 1 ? "0.00%" : `-${s.totalDropPercent?.toFixed(2)}%`}</td>
+                    <td className="py-3.5 px-4 text-right mono-text font-bold text-amber-300">${s.cumulativeAverage?.toFixed(4)}</td>
+                    <td className="py-3.5 px-4 text-right mono-text">${s.cumulativeInvestment?.toFixed(2)}</td>
+                    <td className="py-3.5 px-4 text-right mono-text">{s.cumulativeQuantity?.toFixed(4)}</td>
+                  </>}
                 </tr>
               );
             })}

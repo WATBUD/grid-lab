@@ -2,10 +2,17 @@ export enum StrategyId {
   NONE = "Select Strategy",
   PESS = "Progressive Exposure Scaling Strategy (PESS)",
   FIBONACCI = "Fibonacci Strategy",
+  FIBONACCI_PROGRESSIVE = "Fibonacci 16%-Base Progressive-Drawdown DCA",
   DOUBLE_DOWN = "Double Down Strategy",
 }
 
 export const STRATEGY_CONFIGS = {
+  [StrategyId.FIBONACCI_PROGRESSIVE]: {
+    name: StrategyId.FIBONACCI_PROGRESSIVE,
+    basePrice: 100,
+    gridDistance: 16,
+    positionSizeWeights: [1, 1, 2, 3, 5, 8, 13],
+  },
   [StrategyId.PESS]: {
     name: StrategyId.PESS,
     basePrice: 100,

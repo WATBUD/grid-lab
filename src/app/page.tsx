@@ -47,11 +47,11 @@ export default function Home() {
             <div className="h-7 w-7 rounded-lg bg-linear-to-tr from-cyan-400 to-indigo-600 flex items-center justify-center shadow-md shadow-cyan-400/20 shrink-0">
               <span className="text-[11px] font-bold text-slate-950 font-mono">QL</span>
             </div>
-            <div className="shrink-0 min-w-0 flex items-center gap-2">
+            <div className="min-w-0 max-w-full flex items-center gap-2">
               <select
                 value={strategy.currentStrategyId}
                 onChange={(e) => handleStrategyChange(e.target.value as StrategyId)}
-                className="bg-slate-900/50 border border-white/10 rounded-lg px-2 sm:px-3 py-1.5 text-xs sm:text-sm text-white focus:outline-none focus:border-cyan-500/50 font-bold uppercase tracking-wider cursor-pointer w-full sm:w-auto"
+                className="min-w-0 bg-slate-900/50 border border-white/10 rounded-lg px-2 sm:px-3 py-1.5 text-xs sm:text-sm text-white focus:outline-none focus:border-cyan-500/50 font-bold uppercase tracking-wider cursor-pointer w-full sm:w-auto"
               >
                 {STRATEGY_OPTIONS.map((s) => (
                   <option key={s.id} value={s.id}>
@@ -106,6 +106,7 @@ export default function Home() {
             </div>
             <button
               type="button"
+              disabled={strategy.currentStrategyId === StrategyId.FIBONACCI_PROGRESSIVE}
               onClick={() => strategy.selectDirection(strategy.direction === "long" ? "short" : "long")}
               className={`group inline-flex h-10 items-center gap-2 rounded-lg border px-3 text-sm font-bold transition-all active:scale-95 ${
                 strategy.direction === "long"

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, startTransition } from "react";
 import { STRATEGY_CONFIGS, StrategyId } from "@/app/constants/strategyConfigs";
+import { createProgressiveDca, MAX_PROGRESSIVE_SLOTS } from "@/app/constants/progressiveDca";
 
 const DEFAULT_STRATEGY_ID = StrategyId.FIBONACCI;
 const DEFAULT_STRATEGY_CONFIG = STRATEGY_CONFIGS[DEFAULT_STRATEGY_ID];
@@ -40,6 +41,11 @@ export interface SlotOrder {
   sizeEth: number;
   status: "pending" | "filled" | "cancelled";
   filledAt?: number;
+  drawdownPercent?: number;
+  totalDropPercent?: number;
+  cumulativeAverage?: number;
+  cumulativeInvestment?: number;
+  cumulativeQuantity?: number;
 }
 
 export interface Candle {
@@ -85,6 +91,16 @@ const createGridSlots = (
 ): SlotOrder[] => {
   const safeWeights = positionSizeWeights.filter((weight) => Number.isFinite(weight) && weight > 0);
   const totalWeight = safeWeights.reduce((a: number, b: number) => a + b, 0);
+  if (strategyId === StrategyId.FIBONACCI_PROGRESSIVE) {
+    return createProgressiveDca(safeWeights, basePrice, fibonacciBaseAmount).map((stage, idx) => ({
+      ...stage,
+      slot: idx + 1,
+      sizePercent: safeWeights[idx] * 100,
+      sizeMultiplier: safeWeights[idx],
+      sizeEth: stage.sizeUsd * leverage / stage.triggerPrice,
+      status: "pending" as const,
+    }));
+  }
   const matrixPercent = strategyId === StrategyId.FIBONACCI
     ? safeWeights.map((w: number) => w / 100)
     : safeWeights.map((w: number) => w / totalWeight);
@@ -198,8 +214,10 @@ export function useMartingale() {
           ? saved.basePrice
           : STRATEGY_CONFIGS[savedStrategyId].basePrice);
         setGridDistance(savedGridDistance);
-        setPositionSizeWeights(savedWeights);
-        setDirection(saved.direction === "short" ? "short" : DEFAULT_DIRECTION);
+        setPositionSizeWeights(savedStrategyId === StrategyId.FIBONACCI_PROGRESSIVE
+          ? createFibonacciWeights(Math.min(savedWeights.length || 7, MAX_PROGRESSIVE_SLOTS))
+          : savedWeights);
+        setDirection(savedStrategyId !== StrategyId.FIBONACCI_PROGRESSIVE && saved.direction === "short" ? "short" : DEFAULT_DIRECTION);
         setSettingsLoaded(true);
       });
     } catch {
@@ -453,12 +471,14 @@ export function useMartingale() {
 
     // Load new configuration
     setBasePrice(config.basePrice);
+    const nextUnitSize = strategyId === StrategyId.FIBONACCI_PROGRESSIVE ? 100 : fibonacciBaseAmount;
+    setFibonacciBaseAmount(nextUnitSize);
     setGridDistance(config.gridDistance);
     setBalance(retainedCapital);
     setDirection(DEFAULT_DIRECTION);
 
     // Reset grid with new configuration
-    resetGridSlots(config.basePrice, config.gridDistance, DEFAULT_DIRECTION, strategyId, retainedCapital, getStrategyWeights(strategyId));
+    resetGridSlots(config.basePrice, config.gridDistance, DEFAULT_DIRECTION, strategyId, retainedCapital, getStrategyWeights(strategyId), nextUnitSize);
 
     // Regenerate candles with new base price
     const initialCandles: Candle[] = [];
@@ -496,7 +516,7 @@ export function useMartingale() {
     setCurrentPrice(initialCandles[initialCandles.length - 1].close);
 
     addLog("system", `Strategy loaded. Base price: $${config.basePrice}, Grid distance: ${config.gridDistance}`);
-  }, [resetGridSlots, addLog, computeBollingerBands, initialCapital]);
+  }, [resetGridSlots, addLog, computeBollingerBands, initialCapital, fibonacciBaseAmount]);
 
   // --- Select Direction (Long/Short) ---
   const selectDirection = useCallback((dir: "long" | "short") => {
